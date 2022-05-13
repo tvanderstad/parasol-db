@@ -17,6 +17,7 @@ trait Log<TEvent: Event> {
     type Iterator<'a>: Iterator<Item=&'a TEvent> where TEvent: 'a, Self: 'a;
     fn get_seq(self) -> u64;
     fn iter<'a>(&'a self) -> Self::Iterator<'a>;
+    fn write(&mut self, event: TEvent);
     fn compact<TCompactor: Compactor<TEvent>>(&mut self, compactor: &mut TCompactor) -> Result<()>;
 }
 
@@ -40,6 +41,11 @@ impl <TEvent: Event> Log<TEvent> for InMemoryLog<TEvent> {
 
     fn iter<'a>(&'a self) -> Self::Iterator<'a> {
         InMemoryIterator::<'a, TEvent>{ events: &self.events, i: 0 }
+    }
+
+    fn write(&mut self, event: TEvent) {
+        self.seqs.push(self.seqs.len() as u64);
+        self.events.push(event)
     }
 
     fn compact<TCompactor: Compactor<TEvent>>(&mut self, compactor: &mut TCompactor) -> Result<()> {
@@ -100,9 +106,19 @@ mod tests {
     }
 
     #[test]
-    fn it_works() {
+    fn compact_empty() {
         let mut log = InMemoryLog::<KeyValueAssignment<String, String>>::new();
         let mut compactor = KeyValueAssignmentCompactor::<String>{ keys: HashSet::new() };
         log.compact(&mut compactor).unwrap();
+        assert_eq!(compactor.keys.len(), 0);
+    }
+
+    #[test]
+    fn compact_one() {
+        let mut log = InMemoryLog::<KeyValueAssignment<String, String>>::new();
+        log.write(KeyValueAssignment{ key: String::from("key"), value: String::from("value") });
+        let mut compactor = KeyValueAssignmentCompactor::<String>{ keys: HashSet::new() };
+        log.compact(&mut compactor).unwrap();
+        assert_eq!(compactor.keys.len(), 1);
     }
 }
