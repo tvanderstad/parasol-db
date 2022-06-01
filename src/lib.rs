@@ -3,23 +3,22 @@
 use std::iter::Iterator;
 
 #[derive(Debug)]
-enum Error {}
+pub enum Error {}
 
-type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-trait Compactor<Event> {
-    fn keep(&mut self, seq: u64, event: &Event) -> bool;
-}
-
-trait Log<Event> {
+pub trait Log<Event> {
     type Iterator<'a>: Iterator<Item = &'a Event>
     where
         Event: 'a,
         Self: 'a;
-    fn get_seq(self) -> u64;
+    fn get_seq(&self) -> u64;
     fn iter<'a>(&'a self) -> Self::Iterator<'a>;
     fn write(&mut self, event: Event);
-    fn compact<TCompactor: Compactor<Event>>(&mut self, compactor: &mut TCompactor) -> Result<()>;
+}
+
+pub trait Compactor<Event> {
+    fn keep(&mut self, seq: u64, event: &Event) -> bool;
 }
 
 pub struct InMemoryLog<Event> {
@@ -27,35 +26,18 @@ pub struct InMemoryLog<Event> {
     events: Vec<Event>,
 }
 
-impl<Event> InMemoryLog<Event> {
+impl<Event: Clone> InMemoryLog<Event> {
     pub fn new() -> Self {
         InMemoryLog {
             seqs: Vec::new(),
             events: Vec::new(),
         }
     }
-}
 
-impl<Event: Clone> Log<Event> for InMemoryLog<Event> {
-    type Iterator<'a> = InMemoryIterator<'a, Event> where Event: 'a;
-
-    fn get_seq(self) -> u64 {
-        self.seqs.last().unwrap_or(&0).to_owned()
-    }
-
-    fn iter<'a>(&'a self) -> Self::Iterator<'a> {
-        InMemoryIterator::<'a, Event> {
-            events: &self.events,
-            i: 0,
-        }
-    }
-
-    fn write(&mut self, event: Event) {
-        self.seqs.push(self.seqs.len() as u64);
-        self.events.push(event)
-    }
-
-    fn compact<TCompactor: Compactor<Event>>(&mut self, compactor: &mut TCompactor) -> Result<()> {
+    pub fn compact<TCompactor: Compactor<Event>>(
+        &mut self,
+        compactor: &mut TCompactor,
+    ) -> Result<()> {
         let mut new_seqs = Vec::new();
         let mut new_events = Vec::new();
         for i in 0..self.seqs.len() {
@@ -70,7 +52,27 @@ impl<Event: Clone> Log<Event> for InMemoryLog<Event> {
     }
 }
 
-struct InMemoryIterator<'a, Event> {
+impl<Event> Log<Event> for InMemoryLog<Event> {
+    type Iterator<'a> = InMemoryIterator<'a, Event> where Event: 'a;
+
+    fn get_seq(&self) -> u64 {
+        self.seqs.last().unwrap_or(&0).to_owned()
+    }
+
+    fn iter<'a>(&'a self) -> Self::Iterator<'a> {
+        InMemoryIterator::<'a, Event> {
+            events: &self.events,
+            i: 0,
+        }
+    }
+
+    fn write(&mut self, event: Event) {
+        self.seqs.push(self.seqs.len() as u64);
+        self.events.push(event)
+    }
+}
+
+pub struct InMemoryIterator<'a, Event> {
     events: &'a Vec<Event>,
     i: usize,
 }
