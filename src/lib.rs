@@ -7,14 +7,14 @@ pub enum Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub trait BaseLog<Event> {
-    type Iterator<'a>: Iterator<Item = &'a Event>
+pub trait BaseLog {
+    type Event;
+    type Iterator<'a>: Iterator<Item = &'a Self::Event>
     where
-        Event: 'a,
+        Self::Event: 'a,
         Self: 'a;
-    fn get_seq(&self) -> u64;
-    fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a>;
-    fn write(&mut self, event: Event);
+    fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a>; // range scan (todo: backwards range scan)
+    fn write(&mut self, event: Self::Event) -> u64; // returns sequence number for the write
 }
 
 pub struct InMemoryLog<Event> {
@@ -31,12 +31,9 @@ impl<Event: Clone> InMemoryLog<Event> {
     }
 }
 
-impl<Event> BaseLog<Event> for InMemoryLog<Event> {
+impl<Event> BaseLog for InMemoryLog<Event> {
+    type Event = Event;
     type Iterator<'a> = InMemoryIterator<'a, Event> where Event: 'a;
-
-    fn get_seq(&self) -> u64 {
-        self.seqs.last().unwrap_or(&0).to_owned()
-    }
 
     // todo: binary search
     fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a> {
@@ -48,9 +45,11 @@ impl<Event> BaseLog<Event> for InMemoryLog<Event> {
         }
     }
 
-    fn write(&mut self, event: Event) {
-        self.seqs.push(self.get_seq() + 1);
-        self.events.push(event)
+    fn write(&mut self, event: Event) -> u64 {
+        let next_seq = self.seqs.last().unwrap_or(&0).to_owned() + 1;
+        self.seqs.push(next_seq);
+        self.events.push(event);
+        next_seq
     }
 }
 
@@ -79,18 +78,45 @@ impl<'a, Event> Iterator for InMemoryIterator<'a, Event> {
     }
 }
 
-trait DerivedLog<Derived> {
-    fn get_at_seq(&self, seq: u64) -> &Derived; // what is the value of the index at this seq?
+trait DerivedLog {
+    type Derived;
+    fn get_at_seq(&self, seq: u64) -> Self::Derived; // what is the value of the index at this seq?
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{InMemoryLog, BaseLog};
+    use std::collections::HashMap;
+
+    use crate::{BaseLog, DerivedLog, InMemoryLog};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct KeyValueAssignment<K, V> {
         key: K,
         value: V,
+    }
+
+    struct HashMapLog<'a, Base: BaseLog> {
+        base: &'a Base,
+    }
+
+    impl<'a, Base, K, V> DerivedLog for HashMapLog<'a, Base>
+    where
+        Base: BaseLog<Event = KeyValueAssignment<K, V>>,
+        K: std::cmp::Eq + std::hash::Hash + std::clone::Clone,
+        V: std::clone::Clone,
+    {
+        type Derived = HashMap<K, V>;
+        fn get_at_seq(&self, seq: u64) -> HashMap<K, V> {
+            let mut result = HashMap::<K, V>::new();
+            for key_value_assignment in self.base.iter(0, seq) {
+                match key_value_assignment {
+                    KeyValueAssignment { key, value } => {
+                        result.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            result
+        }
     }
 
     #[test]
@@ -135,6 +161,45 @@ mod tests {
             log.iter(1, 3)
                 .collect::<Vec<&KeyValueAssignment<String, String>>>(),
             vec![&kva2, &kva3]
+        );
+    }
+
+    #[test]
+    fn derived() {
+        let (log, seq) = {
+            // todo: shared and mut references at the same time using unsafe
+            let mut log = InMemoryLog::<KeyValueAssignment<String, String>>::new();
+            log.write(KeyValueAssignment {
+                key: String::from("key1"),
+                value: String::from("value1"),
+            });
+            log.write(KeyValueAssignment {
+                key: String::from("key2"),
+                value: String::from("value2"),
+            });
+            log.write(KeyValueAssignment {
+                key: String::from("key3"),
+                value: String::from("value3"),
+            });
+            let seq = log.write(KeyValueAssignment {
+                key: String::from("key4"),
+                value: String::from("value4"),
+            });
+            (log, seq)
+        };
+        let hash_map_log = HashMapLog { base: &log };
+        let hash_map = hash_map_log.get_at_seq(seq);
+        assert_eq!(
+            hash_map,
+            HashMap::from_iter(
+                vec![
+                    (String::from("key1"), String::from("value1")),
+                    (String::from("key2"), String::from("value2")),
+                    (String::from("key3"), String::from("value3")),
+                    (String::from("key4"), String::from("value4")),
+                ]
+                .into_iter()
+            )
         );
     }
 }
