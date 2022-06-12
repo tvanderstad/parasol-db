@@ -17,10 +17,6 @@ pub trait Log<Event> {
     fn write(&mut self, event: Event);
 }
 
-pub trait Compactor<Event> {
-    fn keep(&mut self, seq: u64, event: &Event) -> bool;
-}
-
 pub struct InMemoryLog<Event> {
     seqs: Vec<u64>,
     events: Vec<Event>,
@@ -32,24 +28,6 @@ impl<Event: Clone> InMemoryLog<Event> {
             seqs: Vec::new(),
             events: Vec::new(),
         }
-    }
-
-    // todo: don't clone
-    pub fn compact<TCompactor: Compactor<Event>>(
-        &mut self,
-        compactor: &mut TCompactor,
-    ) -> Result<()> {
-        let mut new_seqs = Vec::new();
-        let mut new_events = Vec::new();
-        for i in 0..self.seqs.len() {
-            if compactor.keep(self.seqs[i], &self.events[i]) {
-                new_seqs.push(self.seqs[i]);
-                new_events.push(self.events[i].clone());
-            }
-        }
-        self.seqs = new_seqs;
-        self.events = new_events;
-        Ok(())
     }
 }
 
@@ -101,28 +79,23 @@ impl<'a, Event> Iterator for InMemoryIterator<'a, Event> {
     }
 }
 
+trait IndexSequence<T> {
+    fn get_at_seq(&self, seq: u64) -> &T; // what is the value of the index at this seq?
+}
+
+trait Index {
+    fn get_seq(&self) -> u64; // how up-to-date is this index?
+    fn process(&mut self, seq: u64); // update this index
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{Compactor, InMemoryLog, Log};
-    use core::hash::Hash;
-    use std::collections::HashSet;
+    use crate::{InMemoryLog, Log};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct KeyValueAssignment<K, V> {
         key: K,
         value: V,
-    }
-
-    struct KeyValueAssignmentCompactor<K: Clone> {
-        keys: HashSet<K>,
-    }
-
-    impl<K: Clone + Eq + Hash, V: Clone> Compactor<KeyValueAssignment<K, V>>
-        for KeyValueAssignmentCompactor<K>
-    {
-        fn keep(&mut self, _seq: u64, event: &KeyValueAssignment<K, V>) -> bool {
-            self.keys.insert(event.key.clone())
-        }
     }
 
     #[test]
@@ -168,29 +141,5 @@ mod tests {
                 .collect::<Vec<&KeyValueAssignment<String, String>>>(),
             vec![&kva2, &kva3]
         );
-    }
-
-    #[test]
-    fn compact_empty() {
-        let mut log = InMemoryLog::<KeyValueAssignment<String, String>>::new();
-        let mut compactor = KeyValueAssignmentCompactor::<String> {
-            keys: HashSet::new(),
-        };
-        log.compact(&mut compactor).unwrap();
-        assert_eq!(compactor.keys.len(), 0);
-    }
-
-    #[test]
-    fn compact_one() {
-        let mut log = InMemoryLog::<KeyValueAssignment<String, String>>::new();
-        log.write(KeyValueAssignment {
-            key: String::from("key"),
-            value: String::from("value"),
-        });
-        let mut compactor = KeyValueAssignmentCompactor::<String> {
-            keys: HashSet::new(),
-        };
-        log.compact(&mut compactor).unwrap();
-        assert_eq!(compactor.keys.len(), 1);
     }
 }
