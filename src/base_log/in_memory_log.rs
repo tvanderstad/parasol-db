@@ -16,16 +16,10 @@ impl<Event: Clone> InMemoryLog<Event> {
 
 impl<Event> BaseLog for InMemoryLog<Event> {
     type Event = Event;
-    type Iterator<'a> = InMemoryIterator<'a, Event> where Event: 'a;
+    type Iterator<'a> = InMemoryLogIterator<'a, Event> where Event: 'a;
 
-    // todo: binary search
     fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a> {
-        InMemoryIterator::<'a, Event> {
-            log: &self,
-            min_seq_exclusive,
-            max_seq_inclusive,
-            i: 0,
-        }
+        InMemoryLogIterator::new(&self, min_seq_exclusive, max_seq_inclusive)
     }
 
     fn write(&mut self, event: Event) -> u64 {
@@ -36,27 +30,54 @@ impl<Event> BaseLog for InMemoryLog<Event> {
     }
 }
 
-pub struct InMemoryIterator<'a, Event> {
+pub struct InMemoryLogIterator<'a, Event> {
     log: &'a InMemoryLog<Event>,
-    min_seq_exclusive: u64,
-    max_seq_inclusive: u64,
-    i: usize,
+    next: usize,
+    next_back: usize,
 }
 
-impl<'a, Event> Iterator for InMemoryIterator<'a, Event> {
+impl<'a, Event> InMemoryLogIterator<'a, Event> {
+    fn new(log: &'a InMemoryLog<Event>, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self {
+        let next = match log.seqs.binary_search(&min_seq_exclusive) {
+            Ok(i) => i + 1,
+            Err(i) => i,
+        };
+        let next_back = match log.seqs.binary_search(&max_seq_inclusive) {
+            Ok(i) => i + 1,
+            Err(i) => i,
+        };
+        println!("next: {}", next);
+        println!("next_back: {}", next_back);
+        Self {
+            log,
+            next,
+            next_back,
+        }
+    }
+}
+
+impl<'a, Event> Iterator for InMemoryLogIterator<'a, Event> {
     type Item = &'a Event;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.i += 1;
-        while self.i - 1 < self.log.seqs.len()
-            && self.min_seq_exclusive >= self.log.seqs[self.i - 1]
-        {
-            self.i += 1;
-        }
-        if self.i - 1 >= self.log.seqs.len() || self.max_seq_inclusive < self.log.seqs[self.i - 1] {
+        if self.next == self.log.seqs.len() || self.next >= self.next_back {
             None
         } else {
-            Some(&self.log.events[self.i - 1])
+            let result = Some(&self.log.events[self.next]);
+            self.next += 1;
+            result
+        }
+    }
+}
+
+impl<'a, Event> DoubleEndedIterator for InMemoryLogIterator<'a, Event> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.next_back == 0 || self.next >= self.next_back {
+            None
+        } else {
+            let result = Some(&self.log.events[self.next_back - 1]);
+            self.next_back -= 1;
+            result
         }
     }
 }
@@ -69,14 +90,20 @@ mod tests {
     #[test]
     fn iter_none() {
         let log = InMemoryLog::<i32>::new();
-        assert_eq!(log.iter(0, 0).collect::<Vec<&i32>>(), Vec::<&i32>::new());
+        assert_eq!(
+            log.iter(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            Vec::<&i32>::new()
+        );
     }
 
     #[test]
     fn iter_one() {
         let mut log = InMemoryLog::<i32>::new();
         assert_eq!(log.write(12), 1);
-        assert_eq!(log.iter(0, 1).collect::<Vec<&i32>>(), vec![&12]);
+        assert_eq!(
+            log.iter(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            vec![&12]
+        );
     }
 
     #[test]
@@ -87,7 +114,7 @@ mod tests {
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
         assert_eq!(
-            log.iter(0, 4).collect::<Vec<&i32>>(),
+            log.iter(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             vec![&12, &34, &56, &78]
         );
     }
@@ -110,5 +137,57 @@ mod tests {
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
         assert_eq!(log.iter(1, 3).collect::<Vec<&i32>>(), vec![&34, &56]);
+    }
+
+    #[test]
+    fn iter_none_rev() {
+        let log = InMemoryLog::<i32>::new();
+        assert_eq!(
+            log.iter(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            Vec::<&i32>::new()
+        );
+    }
+
+    #[test]
+    fn iter_one_rev() {
+        let mut log = InMemoryLog::<i32>::new();
+        assert_eq!(log.write(12), 1);
+        assert_eq!(
+            log.iter(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            vec![&12]
+        );
+    }
+
+    #[test]
+    fn iter_multiple_rev() {
+        let mut log = InMemoryLog::<i32>::new();
+        assert_eq!(log.write(12), 1);
+        assert_eq!(log.write(34), 2);
+        assert_eq!(log.write(56), 3);
+        assert_eq!(log.write(78), 4);
+        assert_eq!(
+            log.iter(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            vec![&78, &56, &34, &12]
+        );
+    }
+
+    #[test]
+    fn iter_partial_one_rev() {
+        let mut log = InMemoryLog::<i32>::new();
+        assert_eq!(log.write(12), 1);
+        assert_eq!(log.write(34), 2);
+        assert_eq!(log.write(56), 3);
+        assert_eq!(log.write(78), 4);
+        assert_eq!(log.iter(1, 2).rev().collect::<Vec<&i32>>(), vec![&34]);
+    }
+
+    #[test]
+    fn iter_partial_multiple_rev() {
+        let mut log = InMemoryLog::<i32>::new();
+        assert_eq!(log.write(12), 1);
+        assert_eq!(log.write(34), 2);
+        assert_eq!(log.write(56), 3);
+        assert_eq!(log.write(78), 4);
+        assert_eq!(log.iter(1, 3).rev().collect::<Vec<&i32>>(), vec![&56, &34]);
     }
 }
