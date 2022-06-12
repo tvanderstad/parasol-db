@@ -2,31 +2,36 @@ use std::collections::HashMap;
 
 use crate::{BaseLog, DerivedLog};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct KeyValueAssignment<K, V> {
-    key: K,
-    value: V,
+trait KeyValueAssignment {
+    type Key;
+    type Value;
+    fn get(&self) -> (Self::Key, Self::Value);
+}
+
+impl<K: Clone, V: Clone> KeyValueAssignment for (K, V) {
+    type Key = K;
+    type Value = V;
+    fn get(&self) -> (Self::Key, Self::Value) {
+        let (key, value) = self;
+        (key.clone(), value.clone())
+    }
 }
 
 struct HashMapLog<'a, Base: BaseLog> {
     base: &'a Base,
 }
 
-impl<'a, Base, K, V> DerivedLog for HashMapLog<'a, Base>
+impl<'a, Base, Assignment: KeyValueAssignment> DerivedLog for HashMapLog<'a, Base>
 where
-    Base: BaseLog<Event = KeyValueAssignment<K, V>>,
-    K: std::cmp::Eq + std::hash::Hash + std::clone::Clone,
-    V: std::clone::Clone,
+    Base: BaseLog<Event = Assignment>,
+    Assignment::Key: std::cmp::Eq + std::hash::Hash,
 {
-    type Derived = HashMap<K, V>;
-    fn get_at_seq(&self, seq: u64) -> HashMap<K, V> {
-        let mut result = HashMap::<K, V>::new();
+    type Derived = HashMap<Assignment::Key, Assignment::Value>;
+    fn get_at_seq(&self, seq: u64) -> HashMap<Assignment::Key, Assignment::Value> {
+        let mut result = HashMap::<Assignment::Key, Assignment::Value>::new();
         for key_value_assignment in self.base.iter(0, seq) {
-            match key_value_assignment {
-                KeyValueAssignment { key, value } => {
-                    result.insert(key.clone(), value.clone());
-                }
-            }
+            let (key, value) = key_value_assignment.get();
+            result.insert(key, value);
         }
         result
     }
@@ -40,43 +45,80 @@ mod tests {
     use crate::{BaseLog, DerivedLog};
 
     use super::HashMapLog;
-    use super::KeyValueAssignment;
 
     #[test]
-    fn derived() {
-        let (log, seq) = {
-            // todo: shared and mut references at the same time using unsafe
-            let mut log = InMemoryLog::<KeyValueAssignment<String, String>>::new();
-            log.write(KeyValueAssignment {
-                key: String::from("key1"),
-                value: String::from("value1"),
-            });
-            log.write(KeyValueAssignment {
-                key: String::from("key2"),
-                value: String::from("value2"),
-            });
-            log.write(KeyValueAssignment {
-                key: String::from("key3"),
-                value: String::from("value3"),
-            });
-            let seq = log.write(KeyValueAssignment {
-                key: String::from("key4"),
-                value: String::from("value4"),
-            });
-            (log, seq)
-        };
+    fn get_at_seq_none() {
+        let log = InMemoryLog::<(&str, &str)>::new();
         let hash_map_log = HashMapLog { base: &log };
-        let hash_map = hash_map_log.get_at_seq(seq);
+        let hash_map = hash_map_log.get_at_seq(4);
+        assert_eq!(hash_map, HashMap::from_iter(vec![].into_iter()));
+    }
+
+    #[test]
+    fn get_at_seq_one() {
+        let mut log = InMemoryLog::<(&str, &str)>::new();
+        assert_eq!(log.write(("key1", "value1")), 1);
+        let hash_map_log = HashMapLog { base: &log };
+        let hash_map = hash_map_log.get_at_seq(4);
+        assert_eq!(
+            hash_map,
+            HashMap::from_iter(vec![("key1", "value1"),].into_iter())
+        );
+    }
+
+    #[test]
+    fn get_at_seq_all() {
+        let mut log = InMemoryLog::<(&str, &str)>::new();
+        assert_eq!(log.write(("key1", "value1")), 1);
+        assert_eq!(log.write(("key2", "value2")), 2);
+        assert_eq!(log.write(("key3", "value3")), 3);
+        assert_eq!(log.write(("key4", "value4")), 4);
+        let hash_map_log = HashMapLog { base: &log };
+        let hash_map = hash_map_log.get_at_seq(4);
         assert_eq!(
             hash_map,
             HashMap::from_iter(
                 vec![
-                    (String::from("key1"), String::from("value1")),
-                    (String::from("key2"), String::from("value2")),
-                    (String::from("key3"), String::from("value3")),
-                    (String::from("key4"), String::from("value4")),
+                    ("key1", "value1"),
+                    ("key2", "value2"),
+                    ("key3", "value3"),
+                    ("key4", "value4"),
                 ]
                 .into_iter()
+            )
+        );
+    }
+
+    #[test]
+    fn get_at_seq_partial() {
+        let mut log = InMemoryLog::<(&str, &str)>::new();
+        assert_eq!(log.write(("key1", "value1")), 1);
+        assert_eq!(log.write(("key2", "value2")), 2);
+        assert_eq!(log.write(("key3", "value3")), 3);
+        assert_eq!(log.write(("key4", "value4")), 4);
+        let hash_map_log = HashMapLog { base: &log };
+        let hash_map = hash_map_log.get_at_seq(3);
+        assert_eq!(
+            hash_map,
+            HashMap::from_iter(
+                vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3"),].into_iter()
+            )
+        );
+    }
+
+    #[test]
+    fn get_at_seq_partial_overwrite() {
+        let mut log = InMemoryLog::<(&str, &str)>::new();
+        assert_eq!(log.write(("key1", "value1")), 1);
+        assert_eq!(log.write(("key2", "value2")), 2);
+        assert_eq!(log.write(("key3", "value3")), 3);
+        assert_eq!(log.write(("key2", "VALUE2")), 4);
+        let hash_map_log = HashMapLog { base: &log };
+        let hash_map = hash_map_log.get_at_seq(3);
+        assert_eq!(
+            hash_map,
+            HashMap::from_iter(
+                vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3"),].into_iter()
             )
         );
     }
