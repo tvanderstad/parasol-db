@@ -7,7 +7,7 @@ pub enum Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub trait Log<Event> {
+pub trait BaseLog<Event> {
     type Iterator<'a>: Iterator<Item = &'a Event>
     where
         Event: 'a,
@@ -31,7 +31,7 @@ impl<Event: Clone> InMemoryLog<Event> {
     }
 }
 
-impl<Event> Log<Event> for InMemoryLog<Event> {
+impl<Event> BaseLog<Event> for InMemoryLog<Event> {
     type Iterator<'a> = InMemoryIterator<'a, Event> where Event: 'a;
 
     fn get_seq(&self) -> u64 {
@@ -79,18 +79,13 @@ impl<'a, Event> Iterator for InMemoryIterator<'a, Event> {
     }
 }
 
-trait IndexSequence<T> {
-    fn get_at_seq(&self, seq: u64) -> &T; // what is the value of the index at this seq?
-}
-
-trait Index {
-    fn get_seq(&self) -> u64; // how up-to-date is this index?
-    fn process(&mut self, seq: u64); // update this index
+trait DerivedLog<Derived> {
+    fn get_at_seq(&self, seq: u64) -> &Derived; // what is the value of the index at this seq?
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{InMemoryLog, Log};
+    use crate::{InMemoryLog, BaseLog};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct KeyValueAssignment<K, V> {
