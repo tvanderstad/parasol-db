@@ -21,8 +21,10 @@ impl<Event> BaseLog for InMemoryLog<Event> {
     fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a> {
         InMemoryLogIterator::new(&self, min_seq_exclusive, max_seq_inclusive)
     }
+}
 
-    fn write(&mut self, event: Event) -> u64 {
+impl<Event> InMemoryLog<Event> {
+    pub fn write(&mut self, event: Event) -> u64 {
         let next_seq = self.seqs.last().unwrap_or(&0).to_owned() + 1;
         self.seqs.push(next_seq);
         self.events.push(event);

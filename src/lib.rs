@@ -12,7 +12,6 @@ pub trait BaseLog {
         Self::Event: 'a,
         Self: 'a;
     fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a>;
-    fn write(&mut self, event: Self::Event) -> u64;
 }
 
 pub trait DerivedLog {

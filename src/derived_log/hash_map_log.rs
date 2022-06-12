@@ -42,7 +42,7 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::base_log::in_memory_log::InMemoryLog;
-    use crate::{BaseLog, DerivedLog};
+    use crate::DerivedLog;
 
     use super::HashMapLog;
 
