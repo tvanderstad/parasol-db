@@ -48,8 +48,6 @@ impl<'a, Event> InMemoryLogIterator<'a, Event> {
             Ok(i) => i + 1,
             Err(i) => i,
         };
-        println!("next: {}", next);
-        println!("next_back: {}", next_back);
         Self {
             log,
             next,
