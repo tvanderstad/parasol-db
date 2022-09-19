@@ -1,5 +1,3 @@
-#![feature(generic_associated_types)]
-
 pub mod base_log;
 pub mod derived_log;
 
