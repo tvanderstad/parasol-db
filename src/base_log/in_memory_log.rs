@@ -14,12 +14,18 @@ impl<Event: Clone> InMemoryLog<Event> {
     }
 }
 
+impl<Event: Clone> Default for InMemoryLog<Event> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Event> BaseLog for InMemoryLog<Event> {
     type Event = Event;
     type Iterator<'a> = InMemoryLogIterator<'a, Event> where Event: 'a;
 
-    fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a> {
-        InMemoryLogIterator::new(&self, min_seq_exclusive, max_seq_inclusive)
+    fn iter(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {
+        InMemoryLogIterator::new(self, min_seq_exclusive, max_seq_inclusive)
     }
 }
 

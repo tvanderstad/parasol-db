@@ -9,7 +9,7 @@ pub trait BaseLog {
     where
         Self::Event: 'a,
         Self: 'a;
-    fn iter<'a>(&'a self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'a>;
+    fn iter(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_>;
 }
 
 pub trait DerivedLog {
