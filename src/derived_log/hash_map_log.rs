@@ -41,14 +41,14 @@ where
 mod tests {
     use std::collections::HashMap;
 
-    use crate::base_log::in_memory_log::InMemoryLog;
+    use crate::base_log::vector_log::VectorLog;
     use crate::DerivedLog;
 
     use super::HashMapLog;
 
     #[test]
     fn get_at_seq_none() {
-        let log = InMemoryLog::<(&str, &str)>::new();
+        let log = VectorLog::<(&str, &str)>::new();
         let hash_map_log = HashMapLog { base: &log };
         let hash_map = hash_map_log.get_at_seq(4);
         assert_eq!(hash_map, HashMap::from_iter(vec![].into_iter()));
@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn get_at_seq_one() {
-        let mut log = InMemoryLog::<(&str, &str)>::new();
+        let mut log = VectorLog::<(&str, &str)>::new();
         assert_eq!(log.write(("key1", "value1")), 1);
         let hash_map_log = HashMapLog { base: &log };
         let hash_map = hash_map_log.get_at_seq(4);
@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn get_at_seq_all() {
-        let mut log = InMemoryLog::<(&str, &str)>::new();
+        let mut log = VectorLog::<(&str, &str)>::new();
         assert_eq!(log.write(("key1", "value1")), 1);
         assert_eq!(log.write(("key2", "value2")), 2);
         assert_eq!(log.write(("key3", "value3")), 3);
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn get_at_seq_partial() {
-        let mut log = InMemoryLog::<(&str, &str)>::new();
+        let mut log = VectorLog::<(&str, &str)>::new();
         assert_eq!(log.write(("key1", "value1")), 1);
         assert_eq!(log.write(("key2", "value2")), 2);
         assert_eq!(log.write(("key3", "value3")), 3);
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn get_at_seq_partial_overwrite() {
-        let mut log = InMemoryLog::<(&str, &str)>::new();
+        let mut log = VectorLog::<(&str, &str)>::new();
         assert_eq!(log.write(("key1", "value1")), 1);
         assert_eq!(log.write(("key2", "value2")), 2);
         assert_eq!(log.write(("key3", "value3")), 3);
