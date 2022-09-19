@@ -29,7 +29,7 @@ where
     type Derived = HashMap<Assignment::Key, Assignment::Value>;
     fn get_at_seq(&self, seq: u64) -> HashMap<Assignment::Key, Assignment::Value> {
         let mut result = HashMap::<Assignment::Key, Assignment::Value>::new();
-        for key_value_assignment in self.base.iter(0, seq) {
+        for key_value_assignment in self.base.scan(0, seq) {
             let (key, value) = key_value_assignment.get();
             result.insert(key, value);
         }

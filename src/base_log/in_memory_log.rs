@@ -24,7 +24,7 @@ impl<Event> BaseLog for InMemoryLog<Event> {
     type Event = Event;
     type Iterator<'a> = InMemoryLogIterator<'a, Event> where Event: 'a;
 
-    fn iter(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {
+    fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {
         InMemoryLogIterator::new(self, min_seq_exclusive, max_seq_inclusive)
     }
 }
@@ -97,7 +97,7 @@ mod tests {
     fn iter_none() {
         let log = InMemoryLog::<i32>::new();
         assert_eq!(
-            log.iter(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             Vec::<&i32>::new()
         );
     }
@@ -107,7 +107,7 @@ mod tests {
         let mut log = InMemoryLog::<i32>::new();
         assert_eq!(log.write(12), 1);
         assert_eq!(
-            log.iter(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             vec![&12]
         );
     }
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
         assert_eq!(
-            log.iter(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             vec![&12, &34, &56, &78]
         );
     }
@@ -132,7 +132,7 @@ mod tests {
         assert_eq!(log.write(34), 2);
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
-        assert_eq!(log.iter(1, 2).collect::<Vec<&i32>>(), vec![&34]);
+        assert_eq!(log.scan(1, 2).collect::<Vec<&i32>>(), vec![&34]);
     }
 
     #[test]
@@ -142,14 +142,14 @@ mod tests {
         assert_eq!(log.write(34), 2);
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
-        assert_eq!(log.iter(1, 3).collect::<Vec<&i32>>(), vec![&34, &56]);
+        assert_eq!(log.scan(1, 3).collect::<Vec<&i32>>(), vec![&34, &56]);
     }
 
     #[test]
     fn iter_none_rev() {
         let log = InMemoryLog::<i32>::new();
         assert_eq!(
-            log.iter(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
             Vec::<&i32>::new()
         );
     }
@@ -159,7 +159,7 @@ mod tests {
         let mut log = InMemoryLog::<i32>::new();
         assert_eq!(log.write(12), 1);
         assert_eq!(
-            log.iter(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
             vec![&12]
         );
     }
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
         assert_eq!(
-            log.iter(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
             vec![&78, &56, &34, &12]
         );
     }
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(log.write(34), 2);
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
-        assert_eq!(log.iter(1, 2).rev().collect::<Vec<&i32>>(), vec![&34]);
+        assert_eq!(log.scan(1, 2).rev().collect::<Vec<&i32>>(), vec![&34]);
     }
 
     #[test]
@@ -194,6 +194,6 @@ mod tests {
         assert_eq!(log.write(34), 2);
         assert_eq!(log.write(56), 3);
         assert_eq!(log.write(78), 4);
-        assert_eq!(log.iter(1, 3).rev().collect::<Vec<&i32>>(), vec![&56, &34]);
+        assert_eq!(log.scan(1, 3).rev().collect::<Vec<&i32>>(), vec![&56, &34]);
     }
 }
