@@ -21,9 +21,9 @@ struct HashMapLog<'a, Base: BaseLog> {
     base: &'a Base,
 }
 
-impl<'a, Base, Assignment: KeyValueAssignment> DerivedLog for HashMapLog<'a, Base>
+impl<'a, Base, Assignment: KeyValueAssignment + 'a> DerivedLog for HashMapLog<'a, Base>
 where
-    Base: BaseLog<Event = Assignment>,
+    Base: BaseLog<Event<'a> = &'a Assignment>,
     Assignment::Key: std::cmp::Eq + std::hash::Hash,
 {
     type Derived = HashMap<Assignment::Key, Assignment::Value>;

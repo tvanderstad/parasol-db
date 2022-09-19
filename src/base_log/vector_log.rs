@@ -21,7 +21,7 @@ impl<Event: Clone> Default for VectorLog<Event> {
 }
 
 impl<Event> BaseLog for VectorLog<Event> {
-    type Event = Event;
+    type Event<'a> = &'a Event where Event: 'a;
     type Iterator<'a> = VectorLogIterator<'a, Event> where Event: 'a;
 
     fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {

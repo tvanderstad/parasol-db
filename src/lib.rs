@@ -4,10 +4,11 @@ pub mod derived_log;
 use std::iter::DoubleEndedIterator;
 
 pub trait BaseLog {
-    type Event;
-    type Iterator<'a>: DoubleEndedIterator<Item = &'a Self::Event>
+    type Event<'a>
     where
-        Self::Event: 'a,
+        Self: 'a;
+    type Iterator<'a>: DoubleEndedIterator<Item = Self::Event<'a>>
+    where
         Self: 'a;
     fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_>;
 }
