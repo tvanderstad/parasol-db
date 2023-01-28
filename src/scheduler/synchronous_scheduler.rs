@@ -1,52 +1,51 @@
-use crate::log_list::DestListNode;
-use crate::{SourceLog, WritableSourceLog};
+use crate::{DestLog, WritableSourceLog};
+use std::sync::{Arc, Mutex};
 
-pub struct SynchronousScheduler<Base: WritableSourceLog, DestList: DestListNode> {
-    base: Base,
-    dest_list: DestList,
+pub struct SynchronousDatabase<Base>
+where
+    Base: WritableSourceLog,
+{
+    base: Arc<Mutex<Base>>,
+    derived: Vec<Arc<Mutex<dyn DestLog>>>,
 }
 
-impl<Base: WritableSourceLog, SdlList: DestListNode> SourceLog
-    for SynchronousScheduler<Base, SdlList>
+impl<Base> SynchronousDatabase<Base>
+where
+    Base: WritableSourceLog,
 {
-    type Event = Base::Event;
-    type Iterator<'iter> = Base::Iterator<'iter> where Self: 'iter;
-
-    fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {
-        self.base.scan(min_seq_exclusive, max_seq_inclusive)
-    }
-
-    fn current_seq(&self) -> u64 {
-        self.base.current_seq()
-    }
-}
-
-impl<Base: WritableSourceLog, SdlList: DestListNode> WritableSourceLog
-    for SynchronousScheduler<Base, SdlList>
-{
-    fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) {
-        self.base.write(events);
-        self.dest_list.update_all(self.base.current_seq());
+    fn write<Iter: IntoIterator<Item = Base::Event>>(&mut self, events: Iter) {
+        let log_current_seq = {
+            let mut base = self.base.lock().unwrap();
+            base.write(events);
+            base.current_seq()
+        };
+        for derived in &mut self.derived {
+            let mut derived = derived.lock().unwrap();
+            derived.update(log_current_seq);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    // use crate::dest_log::hash_map_log::HashMapLog;
-    use crate::scheduler::synchronous_scheduler::SynchronousScheduler;
+    use crate::dest_log::hash_map_log::HashMapLog;
+    use crate::scheduler::synchronous_scheduler::SynchronousDatabase;
     use crate::source_log::vector_log::VectorLog;
-    use crate::WritableSourceLog;
+    use crate::{DestLog, SourceLog};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
-    // fn tuple_to_assignment<Kvp: Clone>(kvp: &Kvp) -> Option<Kvp> {
-    //     Some(kvp.clone())
-    // }
+    fn tuple_to_assignment<Kvp: Clone>(kvp: &Kvp) -> Option<Kvp> {
+        Some(kvp.clone())
+    }
 
     #[test]
     fn no_dests() {
         let log = VectorLog::<(&str, &str)>::new();
-        let mut scheduler = SynchronousScheduler {
-            base: log,
-            dest_list: (),
+        let log = Arc::new(Mutex::new(log));
+        let mut scheduler = SynchronousDatabase {
+            base: log.clone(),
+            derived: Default::default(),
         };
         scheduler.write([
             ("key1", "value1"),
@@ -54,5 +53,52 @@ mod tests {
             ("key3", "value3"),
             ("key4", "value4"),
         ]);
+
+        {
+            let log = log.lock().unwrap();
+            assert_eq!(log.current_seq(), 4);
+        }
+    }
+
+    #[test]
+    fn one_dest() {
+        let log = VectorLog::<(&str, &str)>::new();
+        let log = Arc::new(Mutex::new(log));
+        let hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+        let hash_map_log = Arc::new(Mutex::new(hash_map_log));
+
+        let mut scheduler = SynchronousDatabase {
+            base: log.clone(),
+            derived: vec![hash_map_log.clone()],
+        };
+        scheduler.write([
+            ("key1", "value1"),
+            ("key2", "value2"),
+            ("key3", "value3"),
+            ("key4", "value4"),
+        ]);
+
+        {
+            let log = log.lock().unwrap();
+            assert_eq!(log.current_seq(), 4);
+        }
+        {
+            let hash_map_log = hash_map_log.lock().unwrap();
+            assert_eq!(hash_map_log.current_seq(), 4);
+
+            let hash_map = hash_map_log.get_all(4);
+            assert_eq!(
+                hash_map,
+                HashMap::from_iter(
+                    vec![
+                        ("key1", "value1"),
+                        ("key2", "value2"),
+                        ("key3", "value3"),
+                        ("key4", "value4"),
+                    ]
+                    .into_iter()
+                )
+            );
+        }
     }
 }

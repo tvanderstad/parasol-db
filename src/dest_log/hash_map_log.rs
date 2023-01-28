@@ -1,31 +1,31 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::sync::{Arc, Mutex};
 
 use crate::{DestLog, SourceLog};
 
-pub struct HashMapLog<'a, Source, Key, Value, ToAssignment>
+pub struct HashMapLog<Source, ToAssignment, Key, Value>
 where
     Source: SourceLog,
+    ToAssignment: Fn(&Source::Event) -> Option<(Key, Value)>,
     Key: Clone + Eq + Hash,
     Value: Clone,
-    ToAssignment: Fn(&'a Source::Event) -> Option<(Key, Value)>, // todo: support delete, clear, etc
 {
-    source: &'a Source,
-    to_assignment: ToAssignment,
+    source: Arc<Mutex<Source>>,
     current_seq: u64,
+    to_assignment: ToAssignment,
     map: HashMap<Key, Value>,
 }
 
-impl<'a, Source, Key, Value, ToAssignment> DestLog
-    for HashMapLog<'a, Source, Key, Value, ToAssignment>
+impl<Source, ToAssignment, Key, Value> DestLog for HashMapLog<Source, ToAssignment, Key, Value>
 where
     Source: SourceLog,
+    ToAssignment: Fn(&Source::Event) -> Option<(Key, Value)>,
     Key: Clone + Eq + Hash,
     Value: Clone,
-    ToAssignment: Fn(&'a Source::Event) -> Option<(Key, Value)>,
 {
     fn update(&mut self, seq: u64) {
-        for event in self.source.scan(self.current_seq, seq) {
+        for event in self.source.lock().unwrap().scan(self.current_seq, seq) {
             if let Some((key, value)) = (self.to_assignment)(event) {
                 self.map.insert(key, value);
             }
@@ -39,33 +39,33 @@ where
     }
 }
 
-impl<'a, Source, Key, Value, ToAssignment> HashMapLog<'a, Source, Key, Value, ToAssignment>
+impl<Source, ToAssignment, Key, Value> HashMapLog<Source, ToAssignment, Key, Value>
 where
     Source: SourceLog,
+    ToAssignment: Fn(&Source::Event) -> Option<(Key, Value)>,
     Key: Clone + Eq + Hash,
     Value: Clone,
-    ToAssignment: Fn(&'a Source::Event) -> Option<(Key, Value)>,
 {
-    pub fn new(source: &'a Source, to_assignment: ToAssignment) -> Self {
+    pub fn new(source: Arc<Mutex<Source>>, to_assignment: ToAssignment) -> Self {
         Self {
             source,
+            current_seq: Default::default(),
             to_assignment,
-            current_seq: 0,
-            map: HashMap::new(),
+            map: Default::default(),
         }
     }
 
     pub fn get_all(&self, seq: u64) -> HashMap<Key, Value> {
         let mut result = self.map.clone();
         let mut keys_mutated_since_seq = HashSet::new();
-        for event in self.source.scan(seq, self.current_seq) {
+        for event in self.source.lock().unwrap().scan(seq, self.current_seq) {
             if let Some((key, _)) = (self.to_assignment)(event) {
                 keys_mutated_since_seq.insert(key);
             }
         }
 
         // for each key mutated since seq, overwrite with the most recent assignment before seq
-        for event in self.source.scan(0, seq).rev() {
+        for event in self.source.lock().unwrap().scan(0, seq).rev() {
             if keys_mutated_since_seq.is_empty() {
                 break;
             }
@@ -90,6 +90,7 @@ mod tests {
     use crate::dest_log::hash_map_log::HashMapLog;
     use crate::{DestLog, SourceLog, WritableSourceLog};
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
     use crate::source_log::vector_log::VectorLog;
 
@@ -100,18 +101,28 @@ mod tests {
     #[test]
     fn get_at_seq_none() {
         let log = VectorLog::<(&str, &str)>::new();
-        let hash_map_log = HashMapLog::new(&log, tuple_to_assignment);
+        let log = Arc::new(Mutex::new(log));
+        let hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+
         let hash_map = hash_map_log.get_all(4);
         assert_eq!(hash_map, HashMap::from_iter(vec![].into_iter()));
     }
 
     #[test]
     fn get_at_seq_one() {
-        let mut log = VectorLog::<(&str, &str)>::new();
-        log.write([("key1", "value1")]);
-        assert_eq!(log.current_seq(), 4);
-        let mut hash_map_log = HashMapLog::new(&log, tuple_to_assignment);
-        hash_map_log.update(log.current_seq());
+        let log = VectorLog::<(&str, &str)>::new();
+        let log = Arc::new(Mutex::new(log));
+        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+
+        let log_current_seq = {
+            let mut log = log.lock().unwrap();
+            log.write([("key1", "value1")]);
+            log.current_seq()
+        };
+        hash_map_log.update(log_current_seq);
+        assert_eq!(log_current_seq, 1);
+        assert_eq!(hash_map_log.current_seq(), 1);
+
         let hash_map = hash_map_log.get_all(4);
         assert_eq!(
             hash_map,
@@ -121,16 +132,24 @@ mod tests {
 
     #[test]
     fn get_at_seq_all() {
-        let mut log = VectorLog::<(&str, &str)>::new();
-        log.write([
-            ("key1", "value1"),
-            ("key2", "value2"),
-            ("key3", "value3"),
-            ("key4", "value4"),
-        ]);
-        assert_eq!(log.current_seq(), 4);
-        let mut hash_map_log = HashMapLog::new(&log, tuple_to_assignment);
-        hash_map_log.update(log.current_seq());
+        let log = VectorLog::<(&str, &str)>::new();
+        let log = Arc::new(Mutex::new(log));
+        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+
+        let log_current_seq = {
+            let mut log = log.lock().unwrap();
+            log.write([
+                ("key1", "value1"),
+                ("key2", "value2"),
+                ("key3", "value3"),
+                ("key4", "value4"),
+            ]);
+            log.current_seq()
+        };
+        hash_map_log.update(log_current_seq);
+        assert_eq!(log_current_seq, 4);
+        assert_eq!(hash_map_log.current_seq(), 4);
+
         let hash_map = hash_map_log.get_all(4);
         assert_eq!(
             hash_map,
@@ -148,16 +167,24 @@ mod tests {
 
     #[test]
     fn get_at_seq_partial() {
-        let mut log = VectorLog::<(&str, &str)>::new();
-        log.write([
-            ("key1", "value1"),
-            ("key2", "value2"),
-            ("key3", "value3"),
-            ("key4", "value4"),
-        ]);
-        assert_eq!(log.current_seq(), 4);
-        let mut hash_map_log = HashMapLog::new(&log, tuple_to_assignment);
-        hash_map_log.update(log.current_seq());
+        let log = VectorLog::<(&str, &str)>::new();
+        let log = Arc::new(Mutex::new(log));
+        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+
+        let log_current_seq = {
+            let mut log = log.lock().unwrap();
+            log.write([
+                ("key1", "value1"),
+                ("key2", "value2"),
+                ("key3", "value3"),
+                ("key4", "value4"),
+            ]);
+            log.current_seq()
+        };
+        hash_map_log.update(log_current_seq);
+        assert_eq!(log_current_seq, 4);
+        assert_eq!(hash_map_log.current_seq(), 4);
+
         let hash_map = hash_map_log.get_all(3);
         assert_eq!(
             hash_map,
@@ -169,16 +196,24 @@ mod tests {
 
     #[test]
     fn get_at_seq_partial_overwrite() {
-        let mut log = VectorLog::<(&str, &str)>::new();
-        log.write([
-            ("key1", "value1"),
-            ("key2", "value2"),
-            ("key3", "value3"),
-            ("key2", "VALUE2"),
-        ]);
-        assert_eq!(log.current_seq(), 4);
-        let mut hash_map_log = HashMapLog::new(&log, tuple_to_assignment);
-        hash_map_log.update(log.current_seq());
+        let log = VectorLog::<(&str, &str)>::new();
+        let log = Arc::new(Mutex::new(log));
+        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+
+        let log_current_seq = {
+            let mut log = log.lock().unwrap();
+            log.write([
+                ("key1", "value1"),
+                ("key2", "value2"),
+                ("key3", "value3"),
+                ("key2", "VALUE2"),
+            ]);
+            log.current_seq()
+        };
+        hash_map_log.update(log_current_seq);
+        assert_eq!(log_current_seq, 4);
+        assert_eq!(hash_map_log.current_seq(), 4);
+
         let hash_map = hash_map_log.get_all(3);
         assert_eq!(
             hash_map,
