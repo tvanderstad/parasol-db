@@ -18,3 +18,8 @@ pub trait SinkLog {
     type AtSeq;
     fn seq(&self, seq: u64) -> Self::AtSeq;
 }
+
+pub trait StatefulSinkLog : SinkLog {
+    fn update(&mut self, seq: u64);
+    fn current_seq(&self) -> u64;
+}
