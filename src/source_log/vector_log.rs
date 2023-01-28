@@ -21,11 +21,15 @@ impl<Event: Clone> Default for VectorLog<Event> {
 }
 
 impl<Event> SourceLog for VectorLog<Event> {
-    type Event<'a> = &'a Event where Event: 'a;
+    type Event = Event;
     type Iterator<'a> = VectorLogIterator<'a, Event> where Event: 'a;
 
     fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {
         VectorLogIterator::new(self, min_seq_exclusive, max_seq_inclusive)
+    }
+
+    fn current_seq(&self) -> u64 {
+        self.seqs.last().unwrap_or(&0).to_owned()
     }
 }
 

@@ -1,25 +1,23 @@
-pub mod source_log;
-pub mod sink_log;
+pub mod dest_log;
 pub mod scheduler;
+pub mod source_log;
 
 use std::iter::DoubleEndedIterator;
 
 pub trait SourceLog {
-    type Event<'a>
-    where
-        Self: 'a;
-    type Iterator<'a>: DoubleEndedIterator<Item = Self::Event<'a>>
+    type Event;
+    type Iterator<'a>: DoubleEndedIterator<Item = &'a Self::Event>
     where
         Self: 'a;
     fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_>;
+    fn current_seq(&self) -> u64;
 }
 
-pub trait SinkLog {
-    type AtSeq;
-    fn seq(&self, seq: u64) -> Self::AtSeq;
+pub trait WritableSourceLog: SourceLog {
+    fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) -> u64;
 }
 
-pub trait StatefulSinkLog : SinkLog {
+pub trait DestLog: Sized {
     fn update(&mut self, seq: u64);
     fn current_seq(&self) -> u64;
 }
