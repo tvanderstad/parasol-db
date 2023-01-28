@@ -1,9 +1,10 @@
-pub mod base_log;
-pub mod derived_log;
+pub mod source_log;
+pub mod sink_log;
+pub mod scheduler;
 
 use std::iter::DoubleEndedIterator;
 
-pub trait BaseLog {
+pub trait SourceLog {
     type Event<'a>
     where
         Self: 'a;
@@ -13,7 +14,7 @@ pub trait BaseLog {
     fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_>;
 }
 
-pub trait DerivedLog {
-    type Derived;
-    fn get_at_seq(&self, seq: u64) -> Self::Derived;
+pub trait SinkLog {
+    type AtSeq;
+    fn seq(&self, seq: u64) -> Self::AtSeq;
 }

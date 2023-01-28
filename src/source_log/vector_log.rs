@@ -1,4 +1,4 @@
-use crate::BaseLog;
+use crate::SourceLog;
 
 pub struct VectorLog<Event> {
     seqs: Vec<u64>,
@@ -20,7 +20,7 @@ impl<Event: Clone> Default for VectorLog<Event> {
     }
 }
 
-impl<Event> BaseLog for VectorLog<Event> {
+impl<Event> SourceLog for VectorLog<Event> {
     type Event<'a> = &'a Event where Event: 'a;
     type Iterator<'a> = VectorLogIterator<'a, Event> where Event: 'a;
 
@@ -91,7 +91,7 @@ impl<'a, Event> DoubleEndedIterator for VectorLogIterator<'a, Event> {
 #[cfg(test)]
 mod tests {
     use super::VectorLog;
-    use crate::BaseLog;
+    use crate::SourceLog;
 
     #[test]
     fn iter_none() {
