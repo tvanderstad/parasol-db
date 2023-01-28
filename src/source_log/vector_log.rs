@@ -1,4 +1,4 @@
-use crate::SourceLog;
+use crate::{SourceLog, WritableSourceLog};
 
 pub struct VectorLog<Event> {
     seqs: Vec<u64>,
@@ -33,12 +33,13 @@ impl<Event> SourceLog for VectorLog<Event> {
     }
 }
 
-impl<Event> VectorLog<Event> {
-    pub fn write(&mut self, event: Event) -> u64 {
-        let next_seq = self.seqs.last().unwrap_or(&0).to_owned() + 1;
-        self.seqs.push(next_seq);
-        self.events.push(event);
-        next_seq
+impl<Event> WritableSourceLog for VectorLog<Event> {
+    fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) {
+        for event in events.into_iter() {
+            let next_seq = self.seqs.last().unwrap_or(&0).to_owned() + 1;
+            self.seqs.push(next_seq);
+            self.events.push(event);
+        }
     }
 }
 
@@ -95,11 +96,12 @@ impl<'a, Event> DoubleEndedIterator for VectorLogIterator<'a, Event> {
 #[cfg(test)]
 mod tests {
     use super::VectorLog;
-    use crate::SourceLog;
+    use crate::{SourceLog, WritableSourceLog};
 
     #[test]
     fn iter_none() {
         let log = VectorLog::<i32>::new();
+        assert_eq!(log.current_seq(), 0);
         assert_eq!(
             log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             Vec::<&i32>::new()
@@ -109,7 +111,8 @@ mod tests {
     #[test]
     fn iter_one() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
+        log.write([12]);
+        assert_eq!(log.current_seq(), 1);
         assert_eq!(
             log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             vec![&12]
@@ -119,10 +122,8 @@ mod tests {
     #[test]
     fn iter_multiple() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
-        assert_eq!(log.write(34), 2);
-        assert_eq!(log.write(56), 3);
-        assert_eq!(log.write(78), 4);
+        log.write([12, 34, 56, 78]);
+        assert_eq!(log.current_seq(), 4);
         assert_eq!(
             log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
             vec![&12, &34, &56, &78]
@@ -132,20 +133,16 @@ mod tests {
     #[test]
     fn iter_partial_one() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
-        assert_eq!(log.write(34), 2);
-        assert_eq!(log.write(56), 3);
-        assert_eq!(log.write(78), 4);
+        log.write([12, 34, 56, 78]);
+        assert_eq!(log.current_seq(), 4);
         assert_eq!(log.scan(1, 2).collect::<Vec<&i32>>(), vec![&34]);
     }
 
     #[test]
     fn iter_partial_multiple() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
-        assert_eq!(log.write(34), 2);
-        assert_eq!(log.write(56), 3);
-        assert_eq!(log.write(78), 4);
+        log.write([12, 34, 56, 78]);
+        assert_eq!(log.current_seq(), 4);
         assert_eq!(log.scan(1, 3).collect::<Vec<&i32>>(), vec![&34, &56]);
     }
 
@@ -161,7 +158,8 @@ mod tests {
     #[test]
     fn iter_one_rev() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
+        log.write([12]);
+        assert_eq!(log.current_seq(), 1);
         assert_eq!(
             log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
             vec![&12]
@@ -171,10 +169,8 @@ mod tests {
     #[test]
     fn iter_multiple_rev() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
-        assert_eq!(log.write(34), 2);
-        assert_eq!(log.write(56), 3);
-        assert_eq!(log.write(78), 4);
+        log.write([12, 34, 56, 78]);
+        assert_eq!(log.current_seq(), 4);
         assert_eq!(
             log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
             vec![&78, &56, &34, &12]
@@ -184,20 +180,16 @@ mod tests {
     #[test]
     fn iter_partial_one_rev() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
-        assert_eq!(log.write(34), 2);
-        assert_eq!(log.write(56), 3);
-        assert_eq!(log.write(78), 4);
+        log.write([12, 34, 56, 78]);
+        assert_eq!(log.current_seq(), 4);
         assert_eq!(log.scan(1, 2).rev().collect::<Vec<&i32>>(), vec![&34]);
     }
 
     #[test]
     fn iter_partial_multiple_rev() {
         let mut log = VectorLog::<i32>::new();
-        assert_eq!(log.write(12), 1);
-        assert_eq!(log.write(34), 2);
-        assert_eq!(log.write(56), 3);
-        assert_eq!(log.write(78), 4);
+        log.write([12, 34, 56, 78]);
+        assert_eq!(log.current_seq(), 4);
         assert_eq!(log.scan(1, 3).rev().collect::<Vec<&i32>>(), vec![&56, &34]);
     }
 }

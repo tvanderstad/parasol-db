@@ -14,7 +14,7 @@ pub trait SourceLog {
 }
 
 pub trait WritableSourceLog: SourceLog {
-    fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) -> u64;
+    fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter);
 }
 
 pub trait DestLog: Sized {
