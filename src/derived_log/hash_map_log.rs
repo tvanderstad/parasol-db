@@ -24,7 +24,7 @@ struct HashMapLog<'a, Base: BaseLog> {
 impl<'a, Base, Assignment: KeyValueAssignment + 'a> DerivedLog for HashMapLog<'a, Base>
 where
     Base: BaseLog<Event<'a> = &'a Assignment>,
-    Assignment::Key: std::cmp::Eq + std::hash::Hash,
+    Assignment::Key: Eq + std::hash::Hash,
 {
     type Derived = HashMap<Assignment::Key, Assignment::Value>;
     fn get_at_seq(&self, seq: u64) -> HashMap<Assignment::Key, Assignment::Value> {
