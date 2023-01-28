@@ -22,7 +22,7 @@ impl<Event: Clone> Default for VectorLog<Event> {
 
 impl<Event> SourceLog for VectorLog<Event> {
     type Event = Event;
-    type Iterator<'a> = VectorLogIterator<'a, Event> where Event: 'a;
+    type Iterator<'iter> = VectorLogIterator<'iter, Event> where Event: 'iter;
 
     fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_> {
         VectorLogIterator::new(self, min_seq_exclusive, max_seq_inclusive)
@@ -43,14 +43,14 @@ impl<Event> WritableSourceLog for VectorLog<Event> {
     }
 }
 
-pub struct VectorLogIterator<'a, Event> {
-    log: &'a VectorLog<Event>,
+pub struct VectorLogIterator<'iter, Event> {
+    log: &'iter VectorLog<Event>,
     next: usize,
     next_back: usize,
 }
 
-impl<'a, Event> VectorLogIterator<'a, Event> {
-    fn new(log: &'a VectorLog<Event>, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self {
+impl<'iter, Event> VectorLogIterator<'iter, Event> {
+    fn new(log: &'iter VectorLog<Event>, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self {
         let next = match log.seqs.binary_search(&min_seq_exclusive) {
             Ok(i) => i + 1,
             Err(i) => i,
@@ -67,8 +67,8 @@ impl<'a, Event> VectorLogIterator<'a, Event> {
     }
 }
 
-impl<'a, Event> Iterator for VectorLogIterator<'a, Event> {
-    type Item = &'a Event;
+impl<'iter, Event> Iterator for VectorLogIterator<'iter, Event> {
+    type Item = &'iter Event;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next == self.log.seqs.len() || self.next >= self.next_back {
@@ -81,7 +81,7 @@ impl<'a, Event> Iterator for VectorLogIterator<'a, Event> {
     }
 }
 
-impl<'a, Event> DoubleEndedIterator for VectorLogIterator<'a, Event> {
+impl<'iter, Event> DoubleEndedIterator for VectorLogIterator<'iter, Event> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.next_back == 0 || self.next >= self.next_back {
             None
