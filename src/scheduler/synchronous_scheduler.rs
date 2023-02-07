@@ -28,15 +28,19 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::dest_log::hash_map_log::HashMapLog;
+    use crate::dest_log::hash_map_log::{HashMapLog, HashMapUpdate};
     use crate::scheduler::synchronous_scheduler::SynchronousDatabase;
     use crate::source_log::vector_log::VectorLog;
     use crate::{DestLog, SourceLog};
     use std::collections::HashMap;
+    use std::hash::Hash;
     use std::sync::{Arc, Mutex};
 
-    fn tuple_to_assignment<Kvp: Clone>(kvp: &Kvp) -> Option<Kvp> {
-        Some(kvp.clone())
+    fn tuple_to_insert<Key: Clone + Eq + Hash, Value: Clone>(
+        kvp: &(Key, Value),
+    ) -> Vec<HashMapUpdate<Key, Value>> {
+        let (key, value) = kvp.clone();
+        vec![HashMapUpdate::Insert { key, value }]
     }
 
     #[test]
@@ -64,7 +68,7 @@ mod tests {
     fn one_dest() {
         let log = VectorLog::<(&str, &str)>::new();
         let log = Arc::new(Mutex::new(log));
-        let hash_map_log = HashMapLog::new(log.clone(), tuple_to_assignment);
+        let hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
         let hash_map_log = Arc::new(Mutex::new(hash_map_log));
 
         let mut scheduler = SynchronousDatabase {
