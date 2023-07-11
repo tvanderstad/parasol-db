@@ -75,7 +75,119 @@ where
         }
     }
 
-    /// Returns a HashMap representing the state of the log at `seq`.
+    /// Returns the value associated with a single key at `seq`.
+    pub fn get(&self, seq: u64, key: &Key) -> Option<Value> {
+        if seq >= self.current_seq {
+            // read backwards from read seq to current seq
+            for (_, event) in self
+                .source
+                .lock()
+                .unwrap()
+                .scan(self.current_seq, seq)
+                .rev()
+            {
+                for update in (self.to_assignment)(event).into_iter().rev() {
+                    match update {
+                        HashMapUpdate::Insert {
+                            key: update_key,
+                            value,
+                        } => {
+                            if key == &update_key {
+                                // most recent modification to key was insertion of this value
+                                return Some(value);
+                            }
+                        }
+                        HashMapUpdate::Remove { key: update_key } => {
+                            if key == &update_key {
+                                // most recent modification to key was removal
+                                return None;
+                            }
+                        }
+                        HashMapUpdate::Clear => {
+                            // most recent modification to key was clear
+                            return None;
+                        }
+                    }
+                }
+            }
+
+            // if none of the operations ahead of seq pertain to key, return the value in the map
+            self.map.get(key).cloned()
+        } else {
+            // read backwards from current seq to read seq to see if it's been modified since current seq
+            let mut modified = false;
+            for (_, event) in self
+                .source
+                .lock()
+                .unwrap()
+                .scan(seq, self.current_seq)
+                .rev()
+            {
+                for update in (self.to_assignment)(event).into_iter().rev() {
+                    match update {
+                        HashMapUpdate::Insert {
+                            key: update_key, ..
+                        } => {
+                            if key == &update_key {
+                                // overwritten since current seq
+                                modified = true;
+                                break;
+                            }
+                        }
+                        HashMapUpdate::Remove { key: update_key } => {
+                            if key == &update_key {
+                                // removed since current seq
+                                modified = true;
+                                break;
+                            }
+                        }
+                        HashMapUpdate::Clear => {
+                            // cleared since current seq
+                            modified = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if modified {
+                // if it's been modified, read backwards from seq until we find its most recent modification
+                for (_, event) in self.source.lock().unwrap().scan(0, seq).rev() {
+                    for update in (self.to_assignment)(event).into_iter().rev() {
+                        match update {
+                            HashMapUpdate::Insert {
+                                key: update_key,
+                                value,
+                            } => {
+                                if key == &update_key {
+                                    // most recent modification is insertion
+                                    return Some(value);
+                                }
+                            }
+                            HashMapUpdate::Remove { key: update_key } => {
+                                if key == &update_key {
+                                    // most recent modification is removal
+                                    return None;
+                                }
+                            }
+                            HashMapUpdate::Clear => {
+                                // most recent modification is clear
+                                return None;
+                            }
+                        }
+                    }
+                }
+
+                // this key was not modified by any log operation
+                None
+            } else {
+                // if it hasn't been modified, return the current value
+                self.map.get(key).cloned()
+            }
+        }
+    }
+
+    /// Returns the full map at `seq`.
     pub fn get_all(&self, seq: u64) -> HashMap<Key, Value> {
         let mut result = self.map.clone();
 
