@@ -1,5 +1,5 @@
+pub mod database;
 pub mod dest_log;
-pub mod scheduler;
 pub mod source_log;
 
 use std::iter::DoubleEndedIterator;

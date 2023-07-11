@@ -35,7 +35,7 @@ where
     Value: Clone,
 {
     fn update(&mut self, seq: u64) {
-        for (event_seq, event) in self.source.lock().unwrap().scan(self.current_seq, seq) {
+        for (_, event) in self.source.lock().unwrap().scan(self.current_seq, seq) {
             for update in (self.to_assignment)(event) {
                 match update {
                     HashMapUpdate::Insert { key, value } => {

@@ -28,8 +28,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::database::synchronous::SynchronousDatabase;
     use crate::dest_log::hash_map_log::{HashMapLog, HashMapUpdate};
-    use crate::scheduler::synchronous_scheduler::SynchronousDatabase;
     use crate::source_log::vector_log::VectorLog;
     use crate::{DestLog, SourceLog};
     use std::collections::HashMap;
