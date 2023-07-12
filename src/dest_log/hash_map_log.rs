@@ -114,7 +114,7 @@ where
             // if none of the operations ahead of seq pertain to key, return the value in the map
             self.map.get(key).cloned()
         } else {
-            // read backwards from current seq to read seq to see if it's been modified since current seq
+            // read backwards from current seq to read seq to find most recent modification (if any) since current seq
             let mut modified = false;
             for (_, event) in self
                 .source
@@ -178,7 +178,7 @@ where
                     }
                 }
 
-                // this key was not modified by any log operation
+                // this key was not modified before seq (worst case performance)
                 None
             } else {
                 // if it hasn't been modified, return the current value
@@ -189,10 +189,9 @@ where
 
     /// Returns the full map at `seq`.
     pub fn get_all(&self, seq: u64) -> HashMap<Key, Value> {
-        let mut result = self.map.clone();
-
         if seq >= self.current_seq {
             // read ahead of current sequence: apply un-applied updates to clone of current state
+            let mut result = self.map.clone();
             for (_, event) in self.source.lock().unwrap().scan(self.current_seq, seq) {
                 for update in (self.to_assignment)(event) {
                     match update {
@@ -208,17 +207,19 @@ where
                     }
                 }
             }
+            result
         } else {
             // read behind current sequence: rewind updates from current state
-            let mut keys_mutated_since_seq = HashSet::new();
+            let mut modified_keys = HashSet::new();
             let mut cleared = false;
 
-            // which keys have changed since the state we're reading at?
+            // determine which keys have changed since the state we're reading at
+            // if the map was cleared, that means all keys have been modified, even ones not in the current map
             for (_, event) in self.source.lock().unwrap().scan(seq, self.current_seq) {
                 for update in (self.to_assignment)(event) {
                     match update {
                         HashMapUpdate::Insert { key, .. } | HashMapUpdate::Remove { key } => {
-                            keys_mutated_since_seq.insert(key);
+                            modified_keys.insert(key);
                         }
                         HashMapUpdate::Clear => {
                             cleared = true;
@@ -228,45 +229,71 @@ where
                 }
             }
 
-            let mut most_recent_clear_seq = 0;
-            for (event_seq, event) in self.source.lock().unwrap().scan(0, seq).rev() {
-                for update in (self.to_assignment)(event) {
-                    match update {
-                        // if the map was cleared, we need to rebuild from the most recent clear before read seq
-                        HashMapUpdate::Clear => {
-                            // remaining keys not inserted until after read seq since prior clear
-                            for key in keys_mutated_since_seq {
-                                result.remove(&key);
+            if cleared {
+                // if the state was cleared since seq, rebuild it from the most recent clear before seq
+                let mut removed_keys = HashSet::new();
+                let mut result = HashMap::new();
+                for (_, event) in self.source.lock().unwrap().scan(0, seq).rev() {
+                    for update in (self.to_assignment)(event).into_iter().rev() {
+                        match update {
+                            HashMapUpdate::Clear => {
+                                // this is the most recent clear, the one we needed to rebuild from
+                                break;
                             }
-                            if most_recent_clear_seq != 0 {
-                                most_recent_clear_seq = event_seq;
+                            HashMapUpdate::Insert { key, value } => {
+                                // only the most recent insert counts, and only if it wasn't removed after
+                                if !result.contains_key(&key) && !removed_keys.contains(&key) {
+                                    result.insert(key, value);
+                                }
                             }
-                            break;
+                            HashMapUpdate::Remove { key } => {
+                                // note removed keys so they're not inserted if the removal happened after the insertion
+                                removed_keys.insert(key);
+                            }
                         }
-                        // otherwise, go find the most recent assignment for each changed key
-                        HashMapUpdate::Insert { key, value } => {
-                            if keys_mutated_since_seq.remove(&key) {
-                                result.insert(key, value);
+                    }
+                }
+                result
+            } else {
+                // otherwise, look back from seq for the most recent modification to each modified key
+                let mut result = self.map.clone();
+                for (_, event) in self.source.lock().unwrap().scan(0, seq).rev() {
+                    for update in (self.to_assignment)(event).into_iter().rev() {
+                        match update {
+                            HashMapUpdate::Clear => {
+                                // remaining keys not inserted between this clear and seq
+                                for key in &modified_keys {
+                                    result.remove(key);
+                                }
+                            }
+                            HashMapUpdate::Insert { key, value } => {
+                                // only the most recent insert counts, and only if it wasn't removed more recently
+                                if modified_keys.remove(&key) {
+                                    result.insert(key, value);
+                                }
+                            }
+                            HashMapUpdate::Remove { key } => {
+                                // note removed keys so they're not inserted if the removal happened after the insertion
+                                modified_keys.remove(&key);
                             }
                         }
-                        HashMapUpdate::Remove { key } => {}
+                    }
+
+                    // once we find all modified keys, we're done
+                    if modified_keys.is_empty() {
+                        return result;
                     }
                 }
 
-                if cleared {}
-
-                if keys_mutated_since_seq.is_empty() {
-                    break;
+                // remaining keys not inserted between 0 and seq
+                for key in &modified_keys {
+                    result.remove(key);
                 }
-            }
 
-            // remaining mutated events are deleted
-            for key in keys_mutated_since_seq {
-                result.remove(&key);
+                // at least one key modified after seq was not modified before seq (worst case performance)
+                result
             }
         }
-
-        result
     }
 }
 
