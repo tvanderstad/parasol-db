@@ -68,15 +68,16 @@ impl<'iter, Event> VectorLogIterator<'iter, Event> {
 }
 
 impl<'iter, Event> Iterator for VectorLogIterator<'iter, Event> {
-    type Item = &'iter Event;
+    type Item = (u64, &'iter Event);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next == self.log.seqs.len() || self.next >= self.next_back {
             None
         } else {
-            let result = Some(&self.log.events[self.next]);
+            let result = &self.log.events[self.next];
+            let current = self.next as u64;
             self.next += 1;
-            result
+            Some((current, result))
         }
     }
 }
@@ -86,9 +87,10 @@ impl<'iter, Event> DoubleEndedIterator for VectorLogIterator<'iter, Event> {
         if self.next_back == 0 || self.next >= self.next_back {
             None
         } else {
-            let result = Some(&self.log.events[self.next_back - 1]);
+            let result = &self.log.events[self.next_back - 1];
+            let current = self.next_back as u64;
             self.next_back -= 1;
-            result
+            Some((current, result))
         }
     }
 }
@@ -103,7 +105,9 @@ mod tests {
         let log = VectorLog::<i32>::new();
         assert_eq!(log.current_seq(), 0);
         assert_eq!(
-            log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
             Vec::<&i32>::new()
         );
     }
@@ -114,7 +118,9 @@ mod tests {
         log.write([12]);
         assert_eq!(log.current_seq(), 1);
         assert_eq!(
-            log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
             vec![&12]
         );
     }
@@ -125,7 +131,9 @@ mod tests {
         log.write([12, 34, 56, 78]);
         assert_eq!(log.current_seq(), 4);
         assert_eq!(
-            log.scan(u64::MIN, u64::MAX).collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
             vec![&12, &34, &56, &78]
         );
     }
@@ -135,7 +143,12 @@ mod tests {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
         assert_eq!(log.current_seq(), 4);
-        assert_eq!(log.scan(1, 2).collect::<Vec<&i32>>(), vec![&34]);
+        assert_eq!(
+            log.scan(1, 2)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&34]
+        );
     }
 
     #[test]
@@ -143,14 +156,22 @@ mod tests {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
         assert_eq!(log.current_seq(), 4);
-        assert_eq!(log.scan(1, 3).collect::<Vec<&i32>>(), vec![&34, &56]);
+        assert_eq!(
+            log.scan(1, 3)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&34, &56]
+        );
     }
 
     #[test]
     fn iter_none_rev() {
         let log = VectorLog::<i32>::new();
         assert_eq!(
-            log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX)
+                .rev()
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
             Vec::<&i32>::new()
         );
     }
@@ -161,7 +182,10 @@ mod tests {
         log.write([12]);
         assert_eq!(log.current_seq(), 1);
         assert_eq!(
-            log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX)
+                .rev()
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
             vec![&12]
         );
     }
@@ -172,7 +196,10 @@ mod tests {
         log.write([12, 34, 56, 78]);
         assert_eq!(log.current_seq(), 4);
         assert_eq!(
-            log.scan(u64::MIN, u64::MAX).rev().collect::<Vec<&i32>>(),
+            log.scan(u64::MIN, u64::MAX)
+                .rev()
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
             vec![&78, &56, &34, &12]
         );
     }
@@ -182,7 +209,13 @@ mod tests {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
         assert_eq!(log.current_seq(), 4);
-        assert_eq!(log.scan(1, 2).rev().collect::<Vec<&i32>>(), vec![&34]);
+        assert_eq!(
+            log.scan(1, 2)
+                .rev()
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&34]
+        );
     }
 
     #[test]
@@ -190,6 +223,12 @@ mod tests {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
         assert_eq!(log.current_seq(), 4);
-        assert_eq!(log.scan(1, 3).rev().collect::<Vec<&i32>>(), vec![&56, &34]);
+        assert_eq!(
+            log.scan(1, 3)
+                .rev()
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&56, &34]
+        );
     }
 }
