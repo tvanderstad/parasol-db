@@ -1,23 +1,28 @@
+#![feature(never_type)]
+#![feature(associated_type_defaults)]
+
 pub mod database;
 pub mod dest_log;
 pub mod source_log;
 
 use std::iter::DoubleEndedIterator;
 
-pub trait SourceLog {
+type Seq = u64;
+
+pub trait View {
     type Event;
-    type Iterator<'iter>: DoubleEndedIterator<Item = (u64, &'iter Self::Event)>
+    type Iterator<'iter>: DoubleEndedIterator<Item = (Seq, &'iter Self::Event)>
     where
         Self: 'iter;
-    fn scan(&self, min_seq_exclusive: u64, max_seq_inclusive: u64) -> Self::Iterator<'_>;
-    fn current_seq(&self) -> u64;
+    fn scan(&self, start_inclusive: Seq, end_exclusive: Seq) -> Self::Iterator<'_>;
+    fn next_seq(&self) -> Seq;
 }
 
-pub trait WritableSourceLog: SourceLog {
+pub trait Table: View {
     fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter);
 }
 
-pub trait DestLog {
-    fn update(&mut self, seq: u64);
-    fn current_seq(&self) -> u64;
+pub trait Index: Sync {
+    fn update(&mut self, seq: Seq);
+    fn current_seq(&self) -> Seq;
 }

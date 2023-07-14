@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 
-use crate::{DestLog, SourceLog};
+use crate::{Index, Seq, View};
 
+#[derive(Clone)]
 pub enum HashMapUpdate<Key, Value>
 where
     Key: Clone + Eq + Hash,
@@ -14,28 +14,27 @@ where
     Clear,
 }
 
-pub struct HashMapLog<Source, ToAssignment, Key, Value>
+pub struct HashMapIndex<'s, Source, Key, Value>
 where
-    Source: SourceLog,
-    ToAssignment: Fn(&Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
+    Source: View,
     Key: Clone + Eq + Hash,
     Value: Clone,
 {
-    source: Arc<Mutex<Source>>,
-    current_seq: u64,
-    to_assignment: ToAssignment,
+    source: &'s Source,
+    current_seq: Seq,
+    to_assignment: fn(&'s Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
     map: HashMap<Key, Value>,
 }
 
-impl<Source, ToAssignment, Key, Value> DestLog for HashMapLog<Source, ToAssignment, Key, Value>
+impl<'s, Source, Key, Value> Index for HashMapIndex<'s, Source, Key, Value>
 where
-    Source: SourceLog,
-    ToAssignment: Fn(&Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
+    Source: View,
     Key: Clone + Eq + Hash,
     Value: Clone,
+    Self: Sync,
 {
-    fn update(&mut self, seq: u64) {
-        for (_, event) in self.source.lock().unwrap().scan(self.current_seq, seq) {
+    fn update(&mut self, seq: Seq) {
+        for (_, event) in self.source.scan(self.current_seq, seq) {
             for update in (self.to_assignment)(event) {
                 match update {
                     HashMapUpdate::Insert { key, value } => {
@@ -54,44 +53,31 @@ where
         self.current_seq = seq;
     }
 
-    fn current_seq(&self) -> u64 {
+    fn current_seq(&self) -> Seq {
         self.current_seq
     }
 }
 
-impl<Source, ToAssignment, Key, Value> HashMapLog<Source, ToAssignment, Key, Value>
+impl<'s, Source, Key, Value> HashMapIndex<'s, Source, Key, Value>
 where
-    Source: SourceLog,
-    ToAssignment: Fn(&Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
+    Source: View,
     Key: Clone + Eq + Hash,
     Value: Clone,
 {
-    pub fn new(source: Arc<Mutex<Source>>, to_assignment: ToAssignment) -> Self {
-        Self {
-            source,
-            current_seq: Default::default(),
-            to_assignment,
-            map: Default::default(),
-        }
+    pub fn new(
+        source: &'s Source, to_assignment: fn(&Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
+    ) -> Self {
+        Self { source, current_seq: Default::default(), to_assignment, map: Default::default() }
     }
 
     /// Returns the value associated with a single key at `seq`.
-    pub fn get(&self, seq: u64, key: &Key) -> Option<Value> {
+    pub fn get(&self, seq: Seq, key: &Key) -> Option<Value> {
         if seq >= self.current_seq {
             // read backwards from read seq to current seq
-            for (_, event) in self
-                .source
-                .lock()
-                .unwrap()
-                .scan(self.current_seq, seq)
-                .rev()
-            {
+            for (_, event) in self.source.scan(self.current_seq, seq).rev() {
                 for update in (self.to_assignment)(event).into_iter().rev() {
                     match update {
-                        HashMapUpdate::Insert {
-                            key: update_key,
-                            value,
-                        } => {
+                        HashMapUpdate::Insert { key: update_key, value } => {
                             if key == &update_key {
                                 // most recent modification to key was insertion of this value
                                 return Some(value);
@@ -116,18 +102,10 @@ where
         } else {
             // read backwards from current seq to read seq to find most recent modification (if any) since current seq
             let mut modified = false;
-            for (_, event) in self
-                .source
-                .lock()
-                .unwrap()
-                .scan(seq, self.current_seq)
-                .rev()
-            {
+            for (_, event) in self.source.scan(seq, self.current_seq).rev() {
                 for update in (self.to_assignment)(event).into_iter().rev() {
                     match update {
-                        HashMapUpdate::Insert {
-                            key: update_key, ..
-                        } => {
+                        HashMapUpdate::Insert { key: update_key, .. } => {
                             if key == &update_key {
                                 // overwritten since current seq
                                 modified = true;
@@ -152,13 +130,10 @@ where
 
             if modified {
                 // if it's been modified, read backwards from seq until we find its most recent modification
-                for (_, event) in self.source.lock().unwrap().scan(0, seq).rev() {
+                for (_, event) in self.source.scan(0, seq).rev() {
                     for update in (self.to_assignment)(event).into_iter().rev() {
                         match update {
-                            HashMapUpdate::Insert {
-                                key: update_key,
-                                value,
-                            } => {
+                            HashMapUpdate::Insert { key: update_key, value } => {
                                 if key == &update_key {
                                     // most recent modification is insertion
                                     return Some(value);
@@ -188,11 +163,11 @@ where
     }
 
     /// Returns the full map at `seq`.
-    pub fn get_all(&self, seq: u64) -> HashMap<Key, Value> {
+    pub fn get_all(&self, seq: Seq) -> HashMap<Key, Value> {
         if seq >= self.current_seq {
             // read ahead of current sequence: apply un-applied updates to clone of current state
             let mut result = self.map.clone();
-            for (_, event) in self.source.lock().unwrap().scan(self.current_seq, seq) {
+            for (_, event) in self.source.scan(self.current_seq, seq) {
                 for update in (self.to_assignment)(event) {
                     match update {
                         HashMapUpdate::Insert { key, value } => {
@@ -215,7 +190,7 @@ where
 
             // determine which keys have changed since the state we're reading at
             // if the map was cleared, that means all keys have been modified, even ones not in the current map
-            for (_, event) in self.source.lock().unwrap().scan(seq, self.current_seq) {
+            for (_, event) in self.source.scan(seq, self.current_seq) {
                 for update in (self.to_assignment)(event) {
                     match update {
                         HashMapUpdate::Insert { key, .. } | HashMapUpdate::Remove { key } => {
@@ -233,7 +208,7 @@ where
                 // if the state was cleared since seq, rebuild it from the most recent clear before seq
                 let mut removed_keys = HashSet::new();
                 let mut result = HashMap::new();
-                for (_, event) in self.source.lock().unwrap().scan(0, seq).rev() {
+                for (_, event) in self.source.scan(0, seq).rev() {
                     for update in (self.to_assignment)(event).into_iter().rev() {
                         match update {
                             HashMapUpdate::Clear => {
@@ -257,7 +232,7 @@ where
             } else {
                 // otherwise, look back from seq for the most recent modification to each modified key
                 let mut result = self.map.clone();
-                for (_, event) in self.source.lock().unwrap().scan(0, seq).rev() {
+                for (_, event) in self.source.scan(0, seq).rev() {
                     for update in (self.to_assignment)(event).into_iter().rev() {
                         match update {
                             HashMapUpdate::Clear => {
@@ -299,11 +274,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::dest_log::hash_map_log::{HashMapLog, HashMapUpdate};
-    use crate::{DestLog, SourceLog, WritableSourceLog};
+    use crate::dest_log::hash_map_log::{HashMapIndex, HashMapUpdate};
+    use crate::{Index, Table, View};
     use std::collections::HashMap;
     use std::hash::Hash;
-    use std::sync::{Arc, Mutex};
 
     use crate::source_log::vector_log::VectorLog;
 
@@ -315,66 +289,47 @@ mod tests {
     }
 
     #[test]
-    fn get_at_seq_none() {
+    fn get_all() {
         let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
-
-        let hash_map = hash_map_log.get_all(4);
-        assert_eq!(hash_map, HashMap::from_iter(vec![].into_iter()));
-    }
-
-    #[test]
-    fn get_at_seq_one() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
+        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
 
         let log_current_seq = {
-            let mut log = log.lock().unwrap();
-            log.write([("key1", "value1")]);
-            log.current_seq()
-        };
-        hash_map_log.update(log_current_seq);
-        assert_eq!(log_current_seq, 1);
-        assert_eq!(hash_map_log.current_seq(), 1);
-
-        let hash_map = hash_map_log.get_all(4);
-        assert_eq!(
-            hash_map,
-            HashMap::from_iter(vec![("key1", "value1"),].into_iter())
-        );
-    }
-
-    #[test]
-    fn get_at_seq_all() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
-
-        let log_current_seq = {
-            let mut log = log.lock().unwrap();
+            let mut log = log;
             log.write([
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
                 ("key4", "value4"),
             ]);
-            log.current_seq()
+            log.next_seq()
         };
         hash_map_log.update(log_current_seq);
         assert_eq!(log_current_seq, 4);
         assert_eq!(hash_map_log.current_seq(), 4);
 
-        let hash_map = hash_map_log.get_all(4);
+        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map,
+            hash_map_log.get_all(1),
+            HashMap::from_iter(vec![("key1", "value1")].into_iter())
+        );
+        assert_eq!(
+            hash_map_log.get_all(2),
+            HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
+        );
+        assert_eq!(
+            hash_map_log.get_all(3),
+            HashMap::from_iter(
+                vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")].into_iter()
+            )
+        );
+        assert_eq!(
+            hash_map_log.get_all(4),
             HashMap::from_iter(
                 vec![
                     ("key1", "value1"),
                     ("key2", "value2"),
                     ("key3", "value3"),
-                    ("key4", "value4"),
+                    ("key4", "value4")
                 ]
                 .into_iter()
             )
@@ -382,60 +337,114 @@ mod tests {
     }
 
     #[test]
-    fn get_at_seq_partial() {
+    fn get_all_overwrite() {
         let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
+        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
 
         let log_current_seq = {
-            let mut log = log.lock().unwrap();
-            log.write([
-                ("key1", "value1"),
-                ("key2", "value2"),
-                ("key3", "value3"),
-                ("key4", "value4"),
-            ]);
-            log.current_seq()
-        };
-        hash_map_log.update(log_current_seq);
-        assert_eq!(log_current_seq, 4);
-        assert_eq!(hash_map_log.current_seq(), 4);
-
-        let hash_map = hash_map_log.get_all(3);
-        assert_eq!(
-            hash_map,
-            HashMap::from_iter(
-                vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3"),].into_iter()
-            )
-        );
-    }
-
-    #[test]
-    fn get_at_seq_partial_overwrite() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let mut hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
-
-        let log_current_seq = {
-            let mut log = log.lock().unwrap();
+            let mut log = log;
             log.write([
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
                 ("key2", "VALUE2"),
             ]);
-            log.current_seq()
+            log.next_seq()
         };
         hash_map_log.update(log_current_seq);
         assert_eq!(log_current_seq, 4);
         assert_eq!(hash_map_log.current_seq(), 4);
 
-        let hash_map = hash_map_log.get_all(3);
+        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map,
+            hash_map_log.get_all(1),
+            HashMap::from_iter(vec![("key1", "value1")].into_iter())
+        );
+        assert_eq!(
+            hash_map_log.get_all(2),
+            HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
+        );
+        assert_eq!(
+            hash_map_log.get_all(3),
             HashMap::from_iter(
-                vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3"),].into_iter()
+                vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")].into_iter()
             )
+        );
+        assert_eq!(
+            hash_map_log.get_all(4),
+            HashMap::from_iter(
+                vec![("key1", "value1"), ("key2", "VALUE2"), ("key3", "value3")].into_iter()
+            )
+        );
+    }
+
+    #[test]
+    fn get_all_clear() {
+        let log = VectorLog::<HashMapUpdate<&str, &str>>::new();
+        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
+
+        let log_current_seq = {
+            let mut log = log;
+            log.write([
+                HashMapUpdate::Insert { key: "key1", value: "value1" },
+                HashMapUpdate::Insert { key: "key2", value: "value2" },
+                HashMapUpdate::Clear,
+                HashMapUpdate::Insert { key: "key3", value: "value3" },
+            ]);
+            log.next_seq()
+        };
+        hash_map_log.update(log_current_seq);
+        assert_eq!(log_current_seq, 4);
+        assert_eq!(hash_map_log.current_seq(), 4);
+
+        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(
+            hash_map_log.get_all(1),
+            HashMap::from_iter(vec![("key1", "value1")].into_iter())
+        );
+        assert_eq!(
+            hash_map_log.get_all(2),
+            HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
+        );
+        assert_eq!(hash_map_log.get_all(3), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(
+            hash_map_log.get_all(4),
+            HashMap::from_iter(vec![("key3", "value3")].into_iter())
+        );
+    }
+
+    #[test]
+    fn get_all_clear_multiple_modifications() {
+        let log = VectorLog::<HashMapUpdate<&str, &str>>::new();
+        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
+
+        let log_current_seq = {
+            let mut log = log;
+            log.write([
+                HashMapUpdate::Insert { key: "key1", value: "value1" },
+                HashMapUpdate::Clear,
+                HashMapUpdate::Insert { key: "key1", value: "value1" },
+                HashMapUpdate::Insert { key: "key1", value: "VALUE1" },
+            ]);
+            log.next_seq()
+        };
+        hash_map_log.update(log_current_seq);
+        assert_eq!(log_current_seq, 4);
+        assert_eq!(hash_map_log.current_seq(), 4);
+
+        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(
+            hash_map_log.get_all(1),
+            HashMap::from_iter(vec![("key1", "value1")].into_iter())
+        );
+        assert_eq!(hash_map_log.get_all(2), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(
+            hash_map_log.get_all(3),
+            HashMap::from_iter(vec![("key1", "value1")].into_iter())
+        );
+        assert_eq!(
+            hash_map_log.get_all(4),
+            HashMap::from_iter(vec![("key1", "VALUE1")].into_iter())
         );
     }
 }

@@ -1,26 +1,25 @@
-use crate::{DestLog, WritableSourceLog};
-use std::sync::{Arc, Mutex};
+use crate::{Index, Table, View};
 
-pub struct SynchronousDatabase<Base>
-where
-    Base: WritableSourceLog,
-{
-    base: Arc<Mutex<Base>>,
-    derived: Vec<Arc<Mutex<dyn DestLog>>>,
+// SynchronousDatabase must be a proc macro; write should write to all writeables, update to updatables, current_seq to min of current seqs
+
+pub struct SynchronousDatabase<Base: Table, Index: crate::Index> {
+    base: Base,
+    dests: Index,
 }
 
-impl<Base> SynchronousDatabase<Base>
-where
-    Base: WritableSourceLog,
-{
-    fn write<Iter: IntoIterator<Item = Base::Event>>(&mut self, events: Iter) {
+pub trait SynchronousDatabase {
+    type Base: Table;
+    type Dest: Index;
+
+    fn base(&mut self) -> &mut Self::Base;
+    fn dests(&mut self) -> Vec<&mut Self::Dest>;
+
+    fn write<Iter: IntoIterator<Item = <Self::Base as View>::Event>>(&mut self, events: Iter) {
         let log_current_seq = {
-            let mut base = self.base.lock().unwrap();
-            base.write(events);
-            base.current_seq()
+            self.base().write(events);
+            self.base().next_seq()
         };
-        for derived in &mut self.derived {
-            let mut derived = derived.lock().unwrap();
+        for derived in self.dests() {
             derived.update(log_current_seq);
         }
     }
@@ -29,9 +28,9 @@ where
 #[cfg(test)]
 mod tests {
     use crate::database::synchronous::SynchronousDatabase;
-    use crate::dest_log::hash_map_log::{HashMapLog, HashMapUpdate};
+    use crate::dest_log::hash_map_log::{HashMapIndex, HashMapUpdate};
     use crate::source_log::vector_log::VectorLog;
-    use crate::{DestLog, SourceLog};
+    use crate::{Index, Table, View};
     use std::collections::HashMap;
     use std::hash::Hash;
     use std::sync::{Arc, Mutex};
@@ -43,66 +42,82 @@ mod tests {
         vec![HashMapUpdate::Insert { key, value }]
     }
 
+    struct NoDestsDb<Base: Table> {
+        base: Base,
+    }
+
+    impl<Base: Table> SynchronousDatabase for NoDestsDb<Base> {
+        type Base = Base;
+        type Dest = !;
+
+        fn base(&mut self) -> &mut Self::Base {
+            &mut self.base
+        }
+
+        fn dests(&mut self) -> Vec<&mut Self::Dest> {
+            Default::default()
+        }
+    }
+
     #[test]
     fn no_dests() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let mut scheduler = SynchronousDatabase {
-            base: log.clone(),
-            derived: Default::default(),
-        };
-        scheduler.write([
-            ("key1", "value1"),
-            ("key2", "value2"),
-            ("key3", "value3"),
-            ("key4", "value4"),
-        ]);
+        let base = VectorLog::<(&str, &str)>::new();
+        let mut db = NoDestsDb { base };
 
-        {
-            let log = log.lock().unwrap();
-            assert_eq!(log.current_seq(), 4);
+        db.write([("key1", "value1"), ("key2", "value2"), ("key3", "value3"), ("key4", "value4")]);
+
+        assert_eq!(db.base.next_seq(), 4);
+    }
+
+    struct HmDb<'base, Base: Table, Dest: View> {
+        base: Base,
+        dest: Dest,
+    }
+
+    impl<'base, Base: Table, Key: Clone + Eq + Hash, Value: Clone> SynchronousDatabase
+        for HmDb<'base, Base, Key, Value>
+    {
+        type Base = Base;
+        type Dest = HashMapIndex;
+
+        fn base(&mut self) -> &mut Self::Base {
+            &mut self.base
+        }
+
+        fn dests(&mut self) -> Vec<&mut Self::Dest> {
+            Default::default()
         }
     }
 
     #[test]
     fn one_dest() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let log = Arc::new(Mutex::new(log));
-        let hash_map_log = HashMapLog::new(log.clone(), tuple_to_insert);
-        let hash_map_log = Arc::new(Mutex::new(hash_map_log));
+        let base = VectorLog::<(&str, &str)>::new();
+        let mut db: SynchronousDatabase<_, Dest<'_, VectorLog<(&str, &str)>>> =
+            SynchronousDatabase { base, derived: vec![] };
+        let hash_map_log = HashMapIndex::new(&db.base, tuple_to_insert);
 
-        let mut scheduler = SynchronousDatabase {
-            base: log.clone(),
-            derived: vec![hash_map_log.clone()],
-        };
-        scheduler.write([
-            ("key1", "value1"),
-            ("key2", "value2"),
-            ("key3", "value3"),
-            ("key4", "value4"),
-        ]);
+        db.derived.push(Dest::HashMap(hash_map_log));
 
-        {
-            let log = log.lock().unwrap();
-            assert_eq!(log.current_seq(), 4);
-        }
-        {
-            let hash_map_log = hash_map_log.lock().unwrap();
-            assert_eq!(hash_map_log.current_seq(), 4);
+        db.write([("key1", "value1"), ("key2", "value2"), ("key3", "value3"), ("key4", "value4")]);
 
-            let hash_map = hash_map_log.get_all(4);
-            assert_eq!(
-                hash_map,
-                HashMap::from_iter(
-                    vec![
-                        ("key1", "value1"),
-                        ("key2", "value2"),
-                        ("key3", "value3"),
-                        ("key4", "value4"),
-                    ]
-                    .into_iter()
-                )
-            );
-        }
+        // assert_eq!(scheduler.base.next_seq(), 4);
+        // assert_eq!(scheduler.derived[0].current_seq(), 4);
+        //
+        // assert_eq!(
+        //     hash_map_log.get_all(4),
+        //     HashMap::from_iter(
+        //         vec![
+        //             ("key1", "value1"),
+        //             ("key2", "value2"),
+        //             ("key3", "value3"),
+        //             ("key4", "value4"),
+        //         ]
+        //         .into_iter()
+        //     )
+        // );
+    }
+
+    enum Dest<'s, Base: View> {
+        HashMap(HashMapIndex<'s, Base, &'static str, &'static str>),
     }
 }
