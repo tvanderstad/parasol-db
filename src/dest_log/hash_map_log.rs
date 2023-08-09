@@ -290,11 +290,9 @@ mod tests {
 
     #[test]
     fn get_all() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
+        let mut log = VectorLog::<(&str, &str)>::new();
 
         let log_current_seq = {
-            let mut log = log;
             log.write([
                 ("key1", "value1"),
                 ("key2", "value2"),
@@ -303,7 +301,10 @@ mod tests {
             ]);
             log.next_seq()
         };
+
+        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
         hash_map_log.update(log_current_seq);
+
         assert_eq!(log_current_seq, 4);
         assert_eq!(hash_map_log.current_seq(), 4);
 
@@ -338,11 +339,9 @@ mod tests {
 
     #[test]
     fn get_all_overwrite() {
-        let log = VectorLog::<(&str, &str)>::new();
-        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
+        let mut log = VectorLog::<(&str, &str)>::new();
 
         let log_current_seq = {
-            let mut log = log;
             log.write([
                 ("key1", "value1"),
                 ("key2", "value2"),
@@ -351,7 +350,10 @@ mod tests {
             ]);
             log.next_seq()
         };
+
+        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
         hash_map_log.update(log_current_seq);
+
         assert_eq!(log_current_seq, 4);
         assert_eq!(hash_map_log.current_seq(), 4);
 
@@ -380,11 +382,9 @@ mod tests {
 
     #[test]
     fn get_all_clear() {
-        let log = VectorLog::<HashMapUpdate<&str, &str>>::new();
-        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
+        let mut log = VectorLog::<HashMapUpdate<&str, &str>>::new();
 
         let log_current_seq = {
-            let mut log = log;
             log.write([
                 HashMapUpdate::Insert { key: "key1", value: "value1" },
                 HashMapUpdate::Insert { key: "key2", value: "value2" },
@@ -393,7 +393,10 @@ mod tests {
             ]);
             log.next_seq()
         };
+
+        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
         hash_map_log.update(log_current_seq);
+
         assert_eq!(log_current_seq, 4);
         assert_eq!(hash_map_log.current_seq(), 4);
 
@@ -415,11 +418,9 @@ mod tests {
 
     #[test]
     fn get_all_clear_multiple_modifications() {
-        let log = VectorLog::<HashMapUpdate<&str, &str>>::new();
-        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
+        let mut log = VectorLog::<HashMapUpdate<&str, &str>>::new();
 
         let log_current_seq = {
-            let mut log = log;
             log.write([
                 HashMapUpdate::Insert { key: "key1", value: "value1" },
                 HashMapUpdate::Clear,
@@ -428,7 +429,10 @@ mod tests {
             ]);
             log.next_seq()
         };
+
+        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
         hash_map_log.update(log_current_seq);
+
         assert_eq!(log_current_seq, 4);
         assert_eq!(hash_map_log.current_seq(), 4);
 

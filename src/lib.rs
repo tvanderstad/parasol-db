@@ -1,7 +1,6 @@
 #![feature(never_type)]
 #![feature(associated_type_defaults)]
 
-pub mod database;
 pub mod dest_log;
 pub mod source_log;
 
