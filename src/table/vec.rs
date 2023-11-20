@@ -18,7 +18,7 @@ impl<Event: Clone> Default for VecTable<Event> {
     }
 }
 
-impl<Event> View for VecTable<Event> {
+impl<Event: Clone> View for VecTable<Event> {
     type Event = Event;
     type Iterator<'iter> = VecTableIterator<'iter, Event> where Event: 'iter;
 
@@ -29,19 +29,20 @@ impl<Event> View for VecTable<Event> {
     }
 
     fn current_seq(&self) -> Seq {
-        self.seqs.iter().max().copied().unwrap_or_default() + 1 as Seq
+        self.seqs.iter().max().copied().unwrap_or_default() as Seq
     }
 }
 
-impl<Event> Table for VecTable<Event> {
+impl<Event: Clone> Table for VecTable<Event> {
     fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) {
         for event in events.into_iter() {
-            self.seqs.push(self.current_seq());
+            self.seqs.push(self.current_seq() + 1);
             self.events.push(event);
         }
     }
 }
 
+#[derive(Clone)]
 pub struct VecTableIterator<'iter, Event> {
     table: &'iter VecTable<Event>,
     reverse: bool,
@@ -120,7 +121,7 @@ mod tests {
     #[test]
     fn iter_none() {
         let table = VecTable::<i32>::new();
-        assert_eq!(table.current_seq(), 1);
+        assert_eq!(table.current_seq(), 0);
         assert_eq!(
             table
                 .scan(Seq::MIN, Seq::MAX)
@@ -134,7 +135,7 @@ mod tests {
     fn iter_one() {
         let mut table = VecTable::<i32>::new();
         table.write([12]);
-        assert_eq!(table.current_seq(), 2);
+        assert_eq!(table.current_seq(), 1);
         assert_eq!(
             table
                 .scan(Seq::MIN, Seq::MAX)
@@ -148,7 +149,7 @@ mod tests {
     fn iter_multiple() {
         let mut table = VecTable::<i32>::new();
         table.write([12, 34, 56, 78]);
-        assert_eq!(table.current_seq(), 5);
+        assert_eq!(table.current_seq(), 4);
         assert_eq!(
             table
                 .scan(Seq::MIN, Seq::MAX)
@@ -162,7 +163,7 @@ mod tests {
     fn iter_partial_one() {
         let mut table = VecTable::<i32>::new();
         table.write([12, 34, 56, 78]);
-        assert_eq!(table.current_seq(), 5);
+        assert_eq!(table.current_seq(), 4);
         assert_eq!(
             table
                 .scan(1, 2)
@@ -176,7 +177,7 @@ mod tests {
     fn iter_partial_multiple() {
         let mut table = VecTable::<i32>::new();
         table.write([12, 34, 56, 78]);
-        assert_eq!(table.current_seq(), 5);
+        assert_eq!(table.current_seq(), 4);
         assert_eq!(
             table
                 .scan(1, 3)
@@ -203,7 +204,7 @@ mod tests {
     fn iter_one_rev() {
         let mut table = VecTable::<i32>::new();
         table.write([12]);
-        assert_eq!(table.current_seq(), 2);
+        assert_eq!(table.current_seq(), 1);
         assert_eq!(
             table
                 .scan(Seq::MIN, Seq::MAX)
@@ -218,7 +219,7 @@ mod tests {
     fn iter_multiple_rev() {
         let mut table = VecTable::<i32>::new();
         table.write([12, 34, 56, 78]);
-        assert_eq!(table.current_seq(), 5);
+        assert_eq!(table.current_seq(), 4);
         assert_eq!(
             table
                 .scan(Seq::MIN, Seq::MAX)
@@ -233,7 +234,7 @@ mod tests {
     fn iter_partial_one_rev() {
         let mut table = VecTable::<i32>::new();
         table.write([12, 34, 56, 78]);
-        assert_eq!(table.current_seq(), 5);
+        assert_eq!(table.current_seq(), 4);
         assert_eq!(
             table
                 .scan(1, 2)
@@ -248,7 +249,7 @@ mod tests {
     fn iter_partial_multiple_rev() {
         let mut table = VecTable::<i32>::new();
         table.write([12, 34, 56, 78]);
-        assert_eq!(table.current_seq(), 5);
+        assert_eq!(table.current_seq(), 4);
         assert_eq!(
             table
                 .scan(1, 3)

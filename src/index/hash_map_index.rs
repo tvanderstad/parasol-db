@@ -305,8 +305,8 @@ mod tests {
         let mut hash_map_index = HashMapIndex::new(&table, tuple_to_insert);
         hash_map_index.update(current_seq);
 
-        assert_eq!(current_seq, 5);
-        assert_eq!(hash_map_index.current_seq(), 5);
+        assert_eq!(current_seq, 4);
+        assert_eq!(hash_map_index.current_seq(), 4);
 
         assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
@@ -354,8 +354,8 @@ mod tests {
         let mut hash_map_index = HashMapIndex::new(&table, tuple_to_insert);
         hash_map_index.update(current_seq);
 
-        assert_eq!(current_seq, 5);
-        assert_eq!(hash_map_index.current_seq(), 5);
+        assert_eq!(current_seq, 4);
+        assert_eq!(hash_map_index.current_seq(), 4);
 
         assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
@@ -397,8 +397,8 @@ mod tests {
         let mut hash_map_index = HashMapIndex::new(&table, |assignment| vec![assignment.clone()]);
         hash_map_index.update(current_seq);
 
-        assert_eq!(current_seq, 5);
-        assert_eq!(hash_map_index.current_seq(), 5);
+        assert_eq!(current_seq, 4);
+        assert_eq!(hash_map_index.current_seq(), 4);
 
         assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
