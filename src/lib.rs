@@ -13,8 +13,8 @@ pub trait View {
     type Iterator<'iter>: DoubleEndedIterator<Item = (Seq, &'iter Self::Event)>
     where
         Self: 'iter;
-    fn scan(&self, start_inclusive: Seq, end_exclusive: Seq) -> Self::Iterator<'_>;
-    fn next_seq(&self) -> Seq;
+    fn scan(&self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator<'_>;
+    fn current_seq(&self) -> Seq;
 }
 
 pub trait Table: View {

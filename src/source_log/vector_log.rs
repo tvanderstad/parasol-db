@@ -2,7 +2,7 @@ use crate::{Seq, Table, View};
 
 #[derive(Clone)]
 pub struct VectorLog<Event> {
-    seqs: Vec<Seq>, // todo: support sparse segs (a few places assume these to be contiguous)
+    seqs: Vec<Seq>,
     events: Vec<Event>,
 }
 
@@ -28,15 +28,15 @@ impl<Event> View for VectorLog<Event> {
         VectorLogIterator::new(self, reverse, min, max)
     }
 
-    fn next_seq(&self) -> Seq {
-        self.seqs.len() as Seq // todo: use seqs array
+    fn current_seq(&self) -> Seq {
+        self.seqs.iter().max().copied().unwrap_or_default() + 1 as Seq
     }
 }
 
 impl<Event> Table for VectorLog<Event> {
     fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) {
         for event in events.into_iter() {
-            self.seqs.push(self.next_seq());
+            self.seqs.push(self.current_seq());
             self.events.push(event);
         }
     }
@@ -45,36 +45,45 @@ impl<Event> Table for VectorLog<Event> {
 pub struct VectorLogIterator<'iter, Event> {
     log: &'iter VectorLog<Event>,
     reverse: bool,
-    min_seq: Seq,
-    max_seq: Seq,
+    min_idx_inclusive: usize,
+    max_idx_exclusive: usize,
 }
 
 impl<'iter, Event> VectorLogIterator<'iter, Event> {
-    fn new(log: &'iter VectorLog<Event>, reverse: bool, min_seq: Seq, max_seq: Seq) -> Self {
-        // todo: use seqs array
-        Self { log, reverse, min_seq, max_seq: std::cmp::min(max_seq, log.seqs.len() as Seq) }
+    fn new(
+        log: &'iter VectorLog<Event>, reverse: bool, min_seq_exclusive: Seq, max_seq_inclusive: Seq,
+    ) -> Self {
+        // note: we swap inclusive/exclusive because we must be able to decrement max_idx to where it excludes everything
+        // if we left it inclusive, that would require usize underflow
+        let min_idx = match log.seqs.binary_search(&min_seq_exclusive) {
+            Ok(idx) => idx + 1,
+            Err(idx) => idx,
+        };
+        let max_idx = match log.seqs.binary_search(&max_seq_inclusive) {
+            Ok(idx) => idx + 1,
+            Err(idx) => idx,
+        };
+        VectorLogIterator { log, reverse, min_idx_inclusive: min_idx, max_idx_exclusive: max_idx }
     }
 
     fn next(&mut self) -> Option<(Seq, &'iter Event)> {
-        let min_seq = self.min_seq as usize; // todo: use seqs array
-        if min_seq == self.log.seqs.len() || self.min_seq == self.max_seq {
+        if self.min_idx_inclusive == self.max_idx_exclusive {
             None
         } else {
-            let result = &self.log.events[min_seq];
-            let current = self.min_seq;
-            self.min_seq += 1;
+            let result = &self.log.events[self.min_idx_inclusive];
+            let current = self.log.seqs[self.min_idx_inclusive];
+            self.min_idx_inclusive += 1;
             Some((current, result))
         }
     }
 
     fn next_back(&mut self) -> Option<(Seq, &'iter Event)> {
-        let max_seq = self.max_seq as usize; // todo: use seqs array
-        if self.max_seq == 0 || self.min_seq == self.max_seq {
+        if self.min_idx_inclusive == self.max_idx_exclusive {
             None
         } else {
-            let result = &self.log.events[max_seq - 1];
-            let current = self.max_seq;
-            self.max_seq -= 1;
+            self.max_idx_exclusive -= 1; // decrementing before reference is what makes this exclusive
+            let result = &self.log.events[self.max_idx_exclusive];
+            let current = self.log.seqs[self.max_idx_exclusive];
             Some((current, result))
         }
     }
@@ -110,7 +119,7 @@ mod tests {
     #[test]
     fn iter_none() {
         let log = VectorLog::<i32>::new();
-        assert_eq!(log.next_seq(), 0);
+        assert_eq!(log.current_seq(), 1);
         assert_eq!(
             log.scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
@@ -123,7 +132,7 @@ mod tests {
     fn iter_one() {
         let mut log = VectorLog::<i32>::new();
         log.write([12]);
-        assert_eq!(log.next_seq(), 1);
+        assert_eq!(log.current_seq(), 2);
         assert_eq!(
             log.scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
@@ -136,7 +145,7 @@ mod tests {
     fn iter_multiple() {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
-        assert_eq!(log.next_seq(), 4);
+        assert_eq!(log.current_seq(), 5);
         assert_eq!(
             log.scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
@@ -149,7 +158,7 @@ mod tests {
     fn iter_partial_one() {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
-        assert_eq!(log.next_seq(), 4);
+        assert_eq!(log.current_seq(), 5);
         assert_eq!(
             log.scan(1, 2)
                 .map(|(_, event)| event)
@@ -162,7 +171,7 @@ mod tests {
     fn iter_partial_multiple() {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
-        assert_eq!(log.next_seq(), 4);
+        assert_eq!(log.current_seq(), 5);
         assert_eq!(
             log.scan(1, 3)
                 .map(|(_, event)| event)
@@ -187,7 +196,7 @@ mod tests {
     fn iter_one_rev() {
         let mut log = VectorLog::<i32>::new();
         log.write([12]);
-        assert_eq!(log.next_seq(), 1);
+        assert_eq!(log.current_seq(), 2);
         assert_eq!(
             log.scan(Seq::MIN, Seq::MAX)
                 .rev()
@@ -201,7 +210,7 @@ mod tests {
     fn iter_multiple_rev() {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
-        assert_eq!(log.next_seq(), 4);
+        assert_eq!(log.current_seq(), 5);
         assert_eq!(
             log.scan(Seq::MIN, Seq::MAX)
                 .rev()
@@ -215,7 +224,7 @@ mod tests {
     fn iter_partial_one_rev() {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
-        assert_eq!(log.next_seq(), 4);
+        assert_eq!(log.current_seq(), 5);
         assert_eq!(
             log.scan(1, 2)
                 .rev()
@@ -229,7 +238,7 @@ mod tests {
     fn iter_partial_multiple_rev() {
         let mut log = VectorLog::<i32>::new();
         log.write([12, 34, 56, 78]);
-        assert_eq!(log.next_seq(), 4);
+        assert_eq!(log.current_seq(), 5);
         assert_eq!(
             log.scan(1, 3)
                 .rev()
