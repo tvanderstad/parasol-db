@@ -1,8 +1,9 @@
 #![feature(never_type)]
 #![feature(associated_type_defaults)]
 
-pub mod dest_log;
-pub mod source_log;
+pub mod index;
+pub mod table;
+pub mod view;
 
 use std::iter::DoubleEndedIterator;
 

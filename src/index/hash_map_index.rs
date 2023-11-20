@@ -274,12 +274,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::dest_log::hash_map_log::{HashMapIndex, HashMapUpdate};
+    use super::{HashMapIndex, HashMapUpdate};
     use crate::{Index, Table, View};
     use std::collections::HashMap;
     use std::hash::Hash;
 
-    use crate::source_log::vector_log::VectorLog;
+    use crate::table::vec::VecTable;
 
     fn tuple_to_insert<Key: Clone + Eq + Hash, Value: Clone>(
         kvp: &(Key, Value),
@@ -290,41 +290,41 @@ mod tests {
 
     #[test]
     fn get_all() {
-        let mut log = VectorLog::<(&str, &str)>::new();
+        let mut table = VecTable::<(&str, &str)>::new();
 
-        let log_current_seq = {
-            log.write([
+        let current_seq = {
+            table.write([
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
                 ("key4", "value4"),
             ]);
-            log.current_seq()
+            table.current_seq()
         };
 
-        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
-        hash_map_log.update(log_current_seq);
+        let mut hash_map_index = HashMapIndex::new(&table, tuple_to_insert);
+        hash_map_index.update(current_seq);
 
-        assert_eq!(log_current_seq, 5);
-        assert_eq!(hash_map_log.current_seq(), 5);
+        assert_eq!(current_seq, 5);
+        assert_eq!(hash_map_index.current_seq(), 5);
 
-        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_log.get_all(1),
+            hash_map_index.get_all(1),
             HashMap::from_iter(vec![("key1", "value1")].into_iter())
         );
         assert_eq!(
-            hash_map_log.get_all(2),
+            hash_map_index.get_all(2),
             HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
         );
         assert_eq!(
-            hash_map_log.get_all(3),
+            hash_map_index.get_all(3),
             HashMap::from_iter(
                 vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")].into_iter()
             )
         );
         assert_eq!(
-            hash_map_log.get_all(4),
+            hash_map_index.get_all(4),
             HashMap::from_iter(
                 vec![
                     ("key1", "value1"),
@@ -339,41 +339,41 @@ mod tests {
 
     #[test]
     fn get_all_overwrite() {
-        let mut log = VectorLog::<(&str, &str)>::new();
+        let mut table = VecTable::<(&str, &str)>::new();
 
-        let log_current_seq = {
-            log.write([
+        let current_seq = {
+            table.write([
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
                 ("key2", "VALUE2"),
             ]);
-            log.current_seq()
+            table.current_seq()
         };
 
-        let mut hash_map_log = HashMapIndex::new(&log, tuple_to_insert);
-        hash_map_log.update(log_current_seq);
+        let mut hash_map_index = HashMapIndex::new(&table, tuple_to_insert);
+        hash_map_index.update(current_seq);
 
-        assert_eq!(log_current_seq, 5);
-        assert_eq!(hash_map_log.current_seq(), 5);
+        assert_eq!(current_seq, 5);
+        assert_eq!(hash_map_index.current_seq(), 5);
 
-        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_log.get_all(1),
+            hash_map_index.get_all(1),
             HashMap::from_iter(vec![("key1", "value1")].into_iter())
         );
         assert_eq!(
-            hash_map_log.get_all(2),
+            hash_map_index.get_all(2),
             HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
         );
         assert_eq!(
-            hash_map_log.get_all(3),
+            hash_map_index.get_all(3),
             HashMap::from_iter(
                 vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")].into_iter()
             )
         );
         assert_eq!(
-            hash_map_log.get_all(4),
+            hash_map_index.get_all(4),
             HashMap::from_iter(
                 vec![("key1", "value1"), ("key2", "VALUE2"), ("key3", "value3")].into_iter()
             )
@@ -382,36 +382,36 @@ mod tests {
 
     #[test]
     fn get_all_clear() {
-        let mut log = VectorLog::<HashMapUpdate<&str, &str>>::new();
+        let mut table = VecTable::<HashMapUpdate<&str, &str>>::new();
 
-        let log_current_seq = {
-            log.write([
+        let current_seq = {
+            table.write([
                 HashMapUpdate::Insert { key: "key1", value: "value1" },
                 HashMapUpdate::Insert { key: "key2", value: "value2" },
                 HashMapUpdate::Clear,
                 HashMapUpdate::Insert { key: "key3", value: "value3" },
             ]);
-            log.current_seq()
+            table.current_seq()
         };
 
-        let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
-        hash_map_log.update(log_current_seq);
+        let mut hash_map_index = HashMapIndex::new(&table, |assignment| vec![assignment.clone()]);
+        hash_map_index.update(current_seq);
 
-        assert_eq!(log_current_seq, 5);
-        assert_eq!(hash_map_log.current_seq(), 5);
+        assert_eq!(current_seq, 5);
+        assert_eq!(hash_map_index.current_seq(), 5);
 
-        assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_log.get_all(1),
+            hash_map_index.get_all(1),
             HashMap::from_iter(vec![("key1", "value1")].into_iter())
         );
         assert_eq!(
-            hash_map_log.get_all(2),
+            hash_map_index.get_all(2),
             HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
         );
-        assert_eq!(hash_map_log.get_all(3), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(3), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_log.get_all(4),
+            hash_map_index.get_all(4),
             HashMap::from_iter(vec![("key3", "value3")].into_iter())
         );
     }
@@ -419,36 +419,36 @@ mod tests {
     // todo: something is broken with clear
     // #[test]
     // fn get_all_clear_multiple_modifications() {
-    //     let mut log = VectorLog::<HashMapUpdate<&str, &str>>::new();
+    //     let mut table = VecTable::<HashMapUpdate<&str, &str>>::new();
 
-    //     let log_current_seq = {
-    //         log.write([
+    //     let current_seq = {
+    //         table.write([
     //             HashMapUpdate::Insert { key: "key1", value: "value1" },
     //             HashMapUpdate::Clear,
     //             HashMapUpdate::Insert { key: "key1", value: "value1" },
     //             HashMapUpdate::Insert { key: "key1", value: "VALUE1" },
     //         ]);
-    //         log.next_seq()
+    //         table.next_seq()
     //     };
 
-    //     let mut hash_map_log = HashMapIndex::new(&log, |assignment| vec![assignment.clone()]);
-    //     hash_map_log.update(log_current_seq);
+    //     let mut hash_map_index = HashMapIndex::new(&table, |assignment| vec![assignment.clone()]);
+    //     hash_map_index.update(current_seq);
 
-    //     assert_eq!(log_current_seq, 4);
-    //     assert_eq!(hash_map_log.current_seq(), 4);
+    //     assert_eq!(current_seq, 4);
+    //     assert_eq!(hash_map_index.current_seq(), 4);
 
-    //     assert_eq!(hash_map_log.get_all(0), HashMap::from_iter(vec![].into_iter()));
+    //     assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
     //     assert_eq!(
-    //         hash_map_log.get_all(1),
+    //         hash_map_index.get_all(1),
     //         HashMap::from_iter(vec![("key1", "value1")].into_iter())
     //     );
-    //     assert_eq!(hash_map_log.get_all(2), HashMap::from_iter(vec![].into_iter()));
+    //     assert_eq!(hash_map_index.get_all(2), HashMap::from_iter(vec![].into_iter()));
     //     assert_eq!(
-    //         hash_map_log.get_all(3),
+    //         hash_map_index.get_all(3),
     //         HashMap::from_iter(vec![("key1", "value1")].into_iter())
     //     );
     //     assert_eq!(
-    //         hash_map_log.get_all(4),
+    //         hash_map_index.get_all(4),
     //         HashMap::from_iter(vec![("key1", "VALUE1")].into_iter())
     //     );
     // }
