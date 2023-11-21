@@ -4,7 +4,7 @@ pub mod view;
 
 use std::iter::DoubleEndedIterator;
 
-type Seq = u64;
+pub type Seq = u64;
 
 pub trait View {
     type Event;
