@@ -1,6 +1,3 @@
-#![feature(never_type)]
-#![feature(associated_type_defaults)]
-
 pub mod index;
 pub mod table;
 pub mod view;
