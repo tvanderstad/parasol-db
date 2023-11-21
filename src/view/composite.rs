@@ -1,4 +1,4 @@
-use crate::{table::vec::VecTable, Seq, View};
+use crate::{Seq, View};
 
 #[derive(Clone)]
 pub struct CompositeView<V: View> {
@@ -6,9 +6,14 @@ pub struct CompositeView<V: View> {
     vector_clock: Vec<Seq>,
 }
 
-impl<Event: Clone> CompositeView<VecTable<Event>> {
-    pub fn new(n: usize) -> Self {
-        Self { views: vec![VecTable::new(); n], vector_clock: vec![0; n] }
+impl<V: View> CompositeView<V> {
+    pub fn new(views: Vec<V>) -> Self {
+        let vector_clock = vec![0; views.len()];
+        Self { views, vector_clock }
+    }
+
+    pub fn vector_clock_update(&mut self, node_id: usize, seq: Seq) {
+        self.vector_clock[node_id] = seq;
     }
 }
 
@@ -121,7 +126,7 @@ mod tests {
 
     #[test]
     fn scan_none() {
-        let composite = CompositeView::<VecTable<i32>>::new(5);
+        let composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
         assert_eq!(composite.current_seq(), 0);
         assert_eq!(
             composite
@@ -134,7 +139,7 @@ mod tests {
 
     #[test]
     fn scan_one() {
-        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+        let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
         composite.views[0].write([12]);
 
@@ -150,7 +155,7 @@ mod tests {
 
     #[test]
     fn scan_multiple_one_node() {
-        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+        let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
         composite.views[0].write([12, 34, 56]);
 
@@ -166,7 +171,7 @@ mod tests {
 
     #[test]
     fn scan_multiple_multiple_nodes() {
-        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+        let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
         composite.views[0].write([12]);
         composite.views[1].write([34]);
@@ -184,7 +189,7 @@ mod tests {
 
     #[test]
     fn scan_multiple_each_multiple_nodes() {
-        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+        let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
         composite.views[0].write([12, 56]);
         composite.views[1].write([34, 90]);
@@ -202,7 +207,7 @@ mod tests {
 
     #[test]
     fn scan_multiple_each_multiple_nodes_sparse_seqs() {
-        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+        let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
         composite.views[0].write([12, 56]);
         composite.views[1].write([34, 90]);
