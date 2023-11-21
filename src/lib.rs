@@ -8,13 +8,11 @@ pub type Seq = u64;
 
 pub trait View {
     type Event;
-    type Iterator<'iter>: DoubleEndedIterator<Item = (Seq, &'iter Self::Event)>
-    where
-        Self: 'iter;
+    type Iterator: DoubleEndedIterator<Item = (Seq, Self::Event)>;
 
     /// Scan the view for events between the given sequences. Returns an double-ended iterator over the events. No work
     /// is done until the iterator is consumed.
-    fn scan(&mut self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator<'_>;
+    fn scan(&mut self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator;
 
     /// Returns the current sequence number of the view. All new events will have a sequence number greater than this.
     fn get_current_seq(&mut self) -> Seq;

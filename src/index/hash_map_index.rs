@@ -21,7 +21,7 @@ where
     Value: Clone,
 {
     current_seq: Seq,
-    to_assignment: fn(&Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
+    to_assignment: fn(Source::Event) -> Vec<HashMapUpdate<Key, Value>>,
     map: HashMap<Key, Value>,
 }
 
@@ -64,7 +64,7 @@ where
     Key: Clone + Eq + Hash,
     Value: Clone,
 {
-    pub fn new(to_assignment: fn(&Source::Event) -> Vec<HashMapUpdate<Key, Value>>) -> Self {
+    pub fn new(to_assignment: fn(Source::Event) -> Vec<HashMapUpdate<Key, Value>>) -> Self {
         Self { current_seq: Default::default(), to_assignment, map: Default::default() }
     }
 
@@ -280,7 +280,7 @@ mod tests {
     use crate::table::vec::VecTable;
 
     fn tuple_to_insert<Key: Clone + Eq + Hash, Value: Clone>(
-        kvp: &(Key, Value),
+        kvp: (Key, Value),
     ) -> Vec<HashMapUpdate<Key, Value>> {
         let (key, value) = kvp.clone();
         vec![HashMapUpdate::Insert { key, value }]
@@ -393,7 +393,7 @@ mod tests {
         };
 
         let mut hash_map_index =
-            HashMapIndex::new(|assignment: &HashMapUpdate<_, _>| vec![assignment.clone()]);
+            HashMapIndex::new(|assignment: HashMapUpdate<_, _>| vec![assignment]);
         hash_map_index.update(&mut table, current_seq);
 
         assert_eq!(current_seq, 4);

@@ -21,12 +21,12 @@ impl<Event: Clone> Default for VecTable<Event> {
 
 impl<Event: Clone> View for VecTable<Event> {
     type Event = Event;
-    type Iterator<'iter> = VecTableIterator<'iter, Event> where Event: 'iter;
+    type Iterator = VecTableIterator<Event>;
 
-    fn scan(&mut self, start: Seq, end: Seq) -> Self::Iterator<'_> {
+    fn scan(&mut self, start: Seq, end: Seq) -> Self::Iterator {
         let reverse = start > end;
         let (min, max) = if reverse { (end, start) } else { (start, end) };
-        VecTableIterator::new(self, reverse, min, max)
+        VecTableIterator::new(self.clone(), reverse, min, max)
     }
 
     fn get_current_seq(&mut self) -> Seq {
@@ -52,17 +52,16 @@ impl<Event: Clone> Table for VecTable<Event> {
 }
 
 #[derive(Clone)]
-pub struct VecTableIterator<'iter, Event> {
-    table: &'iter VecTable<Event>,
+pub struct VecTableIterator<Event> {
+    table: VecTable<Event>,
     reverse: bool,
     min_idx_inclusive: usize,
     max_idx_exclusive: usize,
 }
 
-impl<'iter, Event> VecTableIterator<'iter, Event> {
+impl<Event: Clone> VecTableIterator<Event> {
     fn new(
-        table: &'iter VecTable<Event>, reverse: bool, min_seq_exclusive: Seq,
-        max_seq_inclusive: Seq,
+        table: VecTable<Event>, reverse: bool, min_seq_exclusive: Seq, max_seq_inclusive: Seq,
     ) -> Self {
         // note: we swap inclusive/exclusive because we must be able to decrement max_idx to where it excludes everything
         // if we left it inclusive, that would require usize underflow
@@ -77,47 +76,47 @@ impl<'iter, Event> VecTableIterator<'iter, Event> {
         Self { table, reverse, min_idx_inclusive: min_idx, max_idx_exclusive: max_idx }
     }
 
-    fn next(&mut self) -> Option<(Seq, &'iter Event)> {
+    fn next(&mut self) -> Option<(Seq, Event)> {
         if self.min_idx_inclusive == self.max_idx_exclusive {
             None
         } else {
-            let result = &self.table.events[self.min_idx_inclusive];
+            let result = self.table.events[self.min_idx_inclusive].clone();
             let current = self.table.seqs[self.min_idx_inclusive];
             self.min_idx_inclusive += 1;
             Some((current, result))
         }
     }
 
-    fn next_back(&mut self) -> Option<(Seq, &'iter Event)> {
+    fn next_back(&mut self) -> Option<(Seq, Event)> {
         if self.min_idx_inclusive == self.max_idx_exclusive {
             None
         } else {
             self.max_idx_exclusive -= 1; // decrementing before reference is what makes this exclusive
-            let result = &self.table.events[self.max_idx_exclusive];
+            let result = self.table.events[self.max_idx_exclusive].clone();
             let current = self.table.seqs[self.max_idx_exclusive];
             Some((current, result))
         }
     }
 }
 
-impl<'iter, Event> Iterator for VecTableIterator<'iter, Event> {
-    type Item = (Seq, &'iter Event);
+impl<Event: Clone> Iterator for VecTableIterator<Event> {
+    type Item = (Seq, Event);
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.reverse {
-            VecTableIterator::<'iter, Event>::next(self)
+            VecTableIterator::<Event>::next(self)
         } else {
-            VecTableIterator::<'iter, Event>::next_back(self)
+            VecTableIterator::<Event>::next_back(self)
         }
     }
 }
 
-impl<'iter, Event> DoubleEndedIterator for VecTableIterator<'iter, Event> {
+impl<Event: Clone> DoubleEndedIterator for VecTableIterator<Event> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if !self.reverse {
-            VecTableIterator::<'iter, Event>::next_back(self)
+            VecTableIterator::<Event>::next_back(self)
         } else {
-            VecTableIterator::<'iter, Event>::next(self)
+            VecTableIterator::<Event>::next(self)
         }
     }
 }
@@ -135,8 +134,8 @@ mod tests {
             table
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            Vec::<&i32>::new()
+                .collect::<Vec<i32>>(),
+            Vec::<i32>::new()
         );
     }
 
@@ -149,8 +148,8 @@ mod tests {
             table
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12]
+                .collect::<Vec<i32>>(),
+            vec![12]
         );
     }
 
@@ -163,8 +162,8 @@ mod tests {
             table
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12, &34, &56, &78]
+                .collect::<Vec<i32>>(),
+            vec![12, 34, 56, 78]
         );
     }
 
@@ -177,8 +176,8 @@ mod tests {
             table
                 .scan(1, 2)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&34]
+                .collect::<Vec<i32>>(),
+            vec![34]
         );
     }
 
@@ -191,8 +190,8 @@ mod tests {
             table
                 .scan(1, 3)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&34, &56]
+                .collect::<Vec<i32>>(),
+            vec![34, 56]
         );
     }
 
@@ -204,8 +203,8 @@ mod tests {
                 .scan(Seq::MIN, Seq::MAX)
                 .rev()
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            Vec::<&i32>::new()
+                .collect::<Vec<i32>>(),
+            Vec::<i32>::new()
         );
     }
 
@@ -219,8 +218,8 @@ mod tests {
                 .scan(Seq::MIN, Seq::MAX)
                 .rev()
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12]
+                .collect::<Vec<i32>>(),
+            vec![12]
         );
     }
 
@@ -234,8 +233,8 @@ mod tests {
                 .scan(Seq::MIN, Seq::MAX)
                 .rev()
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&78, &56, &34, &12]
+                .collect::<Vec<i32>>(),
+            vec![78, 56, 34, 12]
         );
     }
 
@@ -249,8 +248,8 @@ mod tests {
                 .scan(1, 2)
                 .rev()
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&34]
+                .collect::<Vec<i32>>(),
+            vec![34]
         );
     }
 
@@ -264,8 +263,8 @@ mod tests {
                 .scan(1, 3)
                 .rev()
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&56, &34]
+                .collect::<Vec<i32>>(),
+            vec![56, 34]
         );
     }
 }

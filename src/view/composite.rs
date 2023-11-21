@@ -19,12 +19,12 @@ impl<V: View> CompositeView<V> {
 
 impl<V: View> View for CompositeView<V>
 where
-    for<'a> V::Iterator<'a>: Clone,
+    for<'a> V::Iterator: Clone,
 {
     type Event = V::Event;
-    type Iterator<'iter> = CompositeViewIterator<'iter, V> where V: 'iter;
+    type Iterator = CompositeViewIterator<V>;
 
-    fn scan(&mut self, start: Seq, end: Seq) -> Self::Iterator<'_> {
+    fn scan(&mut self, start: Seq, end: Seq) -> Self::Iterator {
         CompositeViewIterator::new(self, start, end)
     }
 
@@ -36,13 +36,13 @@ where
     }
 }
 
-pub struct CompositeViewIterator<'iter, V: View + 'iter> {
-    iterators: Vec<V::Iterator<'iter>>,
+pub struct CompositeViewIterator<V: View> {
+    iterators: Vec<V::Iterator>,
 }
 
-impl<'iter, V: View> CompositeViewIterator<'iter, V>
+impl<'iter, V: View> CompositeViewIterator<V>
 where
-    V::Iterator<'iter>: Clone,
+    V::Iterator: Clone,
 {
     fn new(view: &'iter mut CompositeView<V>, start: Seq, end: Seq) -> Self {
         // iterate each constituent view
@@ -56,11 +56,11 @@ where
     }
 }
 
-impl<'iter, V: View + 'iter> Iterator for CompositeViewIterator<'iter, V>
+impl<V: View> Iterator for CompositeViewIterator<V>
 where
-    V::Iterator<'iter>: Clone,
+    V::Iterator: Clone,
 {
-    type Item = (Seq, &'iter V::Event);
+    type Item = (Seq, V::Event);
 
     fn next(&mut self) -> Option<Self::Item> {
         let min_seq_idx = {
@@ -88,9 +88,9 @@ where
     }
 }
 
-impl<'iter, V: View> DoubleEndedIterator for CompositeViewIterator<'iter, V>
+impl<V: View> DoubleEndedIterator for CompositeViewIterator<V>
 where
-    V::Iterator<'iter>: Clone,
+    V::Iterator: Clone,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         let max_seq_idx = {
@@ -132,8 +132,8 @@ mod tests {
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            Vec::<&i32>::new()
+                .collect::<Vec<i32>>(),
+            Vec::<i32>::new()
         );
     }
 
@@ -148,8 +148,8 @@ mod tests {
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12]
+                .collect::<Vec<i32>>(),
+            vec![12]
         );
     }
 
@@ -164,8 +164,8 @@ mod tests {
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12, &34, &56]
+                .collect::<Vec<i32>>(),
+            vec![12, 34, 56]
         );
     }
 
@@ -182,8 +182,8 @@ mod tests {
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12, &34, &56]
+                .collect::<Vec<i32>>(),
+            vec![12, 34, 56]
         );
     }
 
@@ -200,8 +200,8 @@ mod tests {
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12, &34, &78, &56, &90] // ordered by (seq, node) pair
+                .collect::<Vec<i32>>(),
+            vec![12, 34, 78, 56, 90] // ordered by (seq, node) pair
         );
     }
 
@@ -226,8 +226,8 @@ mod tests {
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
-                .collect::<Vec<&i32>>(),
-            vec![&12, &34, &56, &78, &90] // nodes don't matter in this case because seqs are unique
+                .collect::<Vec<i32>>(),
+            vec![12, 34, 56, 78, 90] // nodes don't matter in this case because seqs are unique
         );
     }
 }
