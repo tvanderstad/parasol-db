@@ -33,7 +33,7 @@ where
 {
     type Source = Source;
 
-    fn update(&mut self, source: &Self::Source, seq: Seq) {
+    fn update(&mut self, source: &mut Self::Source, seq: Seq) {
         for (_, event) in source.scan(self.current_seq, seq) {
             for update in (self.to_assignment)(event) {
                 match update {
@@ -69,7 +69,7 @@ where
     }
 
     /// Returns the value associated with a single key at `seq`.
-    pub fn get(&self, source: &Source, seq: Seq, key: &Key) -> Option<Value> {
+    pub fn get(&self, source: &mut Source, seq: Seq, key: &Key) -> Option<Value> {
         if seq >= self.current_seq {
             // read backwards from read seq to current seq
             for (_, event) in source.scan(self.current_seq, seq).rev() {
@@ -161,7 +161,7 @@ where
     }
 
     /// Returns the full map at `seq`.
-    pub fn get_all(&self, source: &Source, seq: Seq) -> HashMap<Key, Value> {
+    pub fn get_all(&self, source: &mut Source, seq: Seq) -> HashMap<Key, Value> {
         if seq >= self.current_seq {
             // read ahead of current sequence: apply un-applied updates to clone of current state
             let mut result = self.map.clone();
@@ -301,28 +301,28 @@ mod tests {
         };
 
         let mut hash_map_index = HashMapIndex::new(tuple_to_insert);
-        hash_map_index.update(&table, current_seq);
+        hash_map_index.update(&mut table, current_seq);
 
         assert_eq!(current_seq, 4);
         assert_eq!(hash_map_index.get_current_seq(), 4);
 
-        assert_eq!(hash_map_index.get_all(&table, 0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(&mut table, 0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_index.get_all(&table, 1),
+            hash_map_index.get_all(&mut table, 1),
             HashMap::from_iter(vec![("key1", "value1")].into_iter())
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 2),
+            hash_map_index.get_all(&mut table, 2),
             HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 3),
+            hash_map_index.get_all(&mut table, 3),
             HashMap::from_iter(
                 vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")].into_iter()
             )
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 4),
+            hash_map_index.get_all(&mut table, 4),
             HashMap::from_iter(
                 vec![
                     ("key1", "value1"),
@@ -350,28 +350,28 @@ mod tests {
         };
 
         let mut hash_map_index = HashMapIndex::new(tuple_to_insert);
-        hash_map_index.update(&table, current_seq);
+        hash_map_index.update(&mut table, current_seq);
 
         assert_eq!(current_seq, 4);
         assert_eq!(hash_map_index.get_current_seq(), 4);
 
-        assert_eq!(hash_map_index.get_all(&table, 0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(&mut table, 0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_index.get_all(&table, 1),
+            hash_map_index.get_all(&mut table, 1),
             HashMap::from_iter(vec![("key1", "value1")].into_iter())
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 2),
+            hash_map_index.get_all(&mut table, 2),
             HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 3),
+            hash_map_index.get_all(&mut table, 3),
             HashMap::from_iter(
                 vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")].into_iter()
             )
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 4),
+            hash_map_index.get_all(&mut table, 4),
             HashMap::from_iter(
                 vec![("key1", "value1"), ("key2", "VALUE2"), ("key3", "value3")].into_iter()
             )
@@ -394,23 +394,23 @@ mod tests {
 
         let mut hash_map_index =
             HashMapIndex::new(|assignment: &HashMapUpdate<_, _>| vec![assignment.clone()]);
-        hash_map_index.update(&table, current_seq);
+        hash_map_index.update(&mut table, current_seq);
 
         assert_eq!(current_seq, 4);
         assert_eq!(hash_map_index.get_current_seq(), 4);
 
-        assert_eq!(hash_map_index.get_all(&table, 0), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(&mut table, 0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_index.get_all(&table, 1),
+            hash_map_index.get_all(&mut table, 1),
             HashMap::from_iter(vec![("key1", "value1")].into_iter())
         );
         assert_eq!(
-            hash_map_index.get_all(&table, 2),
+            hash_map_index.get_all(&mut table, 2),
             HashMap::from_iter(vec![("key1", "value1"), ("key2", "value2")].into_iter())
         );
-        assert_eq!(hash_map_index.get_all(&table, 3), HashMap::from_iter(vec![].into_iter()));
+        assert_eq!(hash_map_index.get_all(&mut table, 3), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
-            hash_map_index.get_all(&table, 4),
+            hash_map_index.get_all(&mut table, 4),
             HashMap::from_iter(vec![("key3", "value3")].into_iter())
         );
     }
@@ -436,18 +436,18 @@ mod tests {
     //     assert_eq!(current_seq, 4);
     //     assert_eq!(hash_map_index.current_seq(), 4);
 
-    //     assert_eq!(hash_map_index.get_all(&table, 0), HashMap::from_iter(vec![].into_iter()));
+    //     assert_eq!(hash_map_index.get_all(&mut table, 0), HashMap::from_iter(vec![].into_iter()));
     //     assert_eq!(
-    //         hash_map_index.get_all(&table, 1),
+    //         hash_map_index.get_all(&mut table, 1),
     //         HashMap::from_iter(vec![("key1", "value1")].into_iter())
     //     );
-    //     assert_eq!(hash_map_index.get_all(&table, 2), HashMap::from_iter(vec![].into_iter()));
+    //     assert_eq!(hash_map_index.get_all(&mut table, 2), HashMap::from_iter(vec![].into_iter()));
     //     assert_eq!(
-    //         hash_map_index.get_all(&table, 3),
+    //         hash_map_index.get_all(&mut table, 3),
     //         HashMap::from_iter(vec![("key1", "value1")].into_iter())
     //     );
     //     assert_eq!(
-    //         hash_map_index.get_all(&table, 4),
+    //         hash_map_index.get_all(&mut table, 4),
     //         HashMap::from_iter(vec![("key1", "VALUE1")].into_iter())
     //     );
     // }

@@ -14,24 +14,10 @@ pub trait View {
 
     /// Scan the view for events between the given sequences. Returns an double-ended iterator over the events. No work
     /// is done until the iterator is consumed.
-    fn scan(&self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator<'_>;
+    fn scan(&mut self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator<'_>;
 
     /// Returns the current sequence number of the view. All new events will have a sequence number greater than this.
-    fn get_current_seq(&self) -> Seq;
-}
-
-// if you are a view, a reference to you is a view as well
-impl<V: View> View for &V {
-    type Event = V::Event;
-    type Iterator<'iter> = V::Iterator<'iter> where Self: 'iter;
-
-    fn scan(&self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator<'_> {
-        (*self).scan(start_exclusive, end_inclusive)
-    }
-
-    fn get_current_seq(&self) -> Seq {
-        (*self).get_current_seq()
-    }
+    fn get_current_seq(&mut self) -> Seq;
 }
 
 pub trait Table: View {
@@ -46,7 +32,7 @@ pub trait Index {
     type Source: View;
 
     /// Incorporates all changes up to and including the given sequence number into the index.
-    fn update(&mut self, source: &Self::Source, seq: Seq);
+    fn update(&mut self, source: &mut Self::Source, seq: Seq);
 
     /// Returns the sequence number for which all changes up to and including it have been incorporated into the index.
     fn get_current_seq(&self) -> Seq;

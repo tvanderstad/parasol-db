@@ -24,11 +24,11 @@ where
     type Event = V::Event;
     type Iterator<'iter> = CompositeViewIterator<'iter, V> where V: 'iter;
 
-    fn scan(&self, start: Seq, end: Seq) -> Self::Iterator<'_> {
+    fn scan(&mut self, start: Seq, end: Seq) -> Self::Iterator<'_> {
         CompositeViewIterator::new(self, start, end)
     }
 
-    fn get_current_seq(&self) -> Seq {
+    fn get_current_seq(&mut self) -> Seq {
         // current seq for the purposes of reading is the minimum of sequences in the vector clock.
         // the entry for a vector clock is only updated by a transmission from that node, which is a promise not to
         // assign lower sequence numbers to writes, so that the events before the minimum sequence number are immutable
@@ -44,12 +44,12 @@ impl<'iter, V: View> CompositeViewIterator<'iter, V>
 where
     V::Iterator<'iter>: Clone,
 {
-    fn new(view: &'iter CompositeView<V>, start: Seq, end: Seq) -> Self {
+    fn new(view: &'iter mut CompositeView<V>, start: Seq, end: Seq) -> Self {
         // iterate each constituent view
         Self {
             iterators: view
                 .views
-                .iter()
+                .iter_mut()
                 .map(|view| view.scan(start, end))
                 .collect(),
         }
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn scan_none() {
-        let composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
+        let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
         assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite

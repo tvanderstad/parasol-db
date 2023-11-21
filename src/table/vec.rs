@@ -23,13 +23,13 @@ impl<Event: Clone> View for VecTable<Event> {
     type Event = Event;
     type Iterator<'iter> = VecTableIterator<'iter, Event> where Event: 'iter;
 
-    fn scan(&self, start: Seq, end: Seq) -> Self::Iterator<'_> {
+    fn scan(&mut self, start: Seq, end: Seq) -> Self::Iterator<'_> {
         let reverse = start > end;
         let (min, max) = if reverse { (end, start) } else { (start, end) };
         VecTableIterator::new(self, reverse, min, max)
     }
 
-    fn get_current_seq(&self) -> Seq {
+    fn get_current_seq(&mut self) -> Seq {
         self.current_seq
     }
 }
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn scan_none() {
-        let table = VecTable::<i32>::new();
+        let mut table = VecTable::<i32>::new();
         assert_eq!(table.get_current_seq(), 0);
         assert_eq!(
             table
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn scan_none_rev() {
-        let table = VecTable::<i32>::new();
+        let mut table = VecTable::<i32>::new();
         assert_eq!(
             table
                 .scan(Seq::MIN, Seq::MAX)
