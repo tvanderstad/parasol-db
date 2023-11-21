@@ -14,8 +14,13 @@ pub trait View {
     type Iterator<'iter>: DoubleEndedIterator<Item = (Seq, &'iter Self::Event)>
     where
         Self: 'iter;
+
+    /// Scan the view for events between the given sequences. Returns an double-ended iterator over the events. No work
+    /// is done until the iterator is consumed.
     fn scan(&self, start_exclusive: Seq, end_inclusive: Seq) -> Self::Iterator<'_>;
-    fn current_seq(&self) -> Seq;
+
+    /// Returns the current sequence number of the view. All new events will have a sequence number greater than this.
+    fn get_current_seq(&self) -> Seq;
 }
 
 // if you are a view, a reference to you is a view as well
@@ -27,16 +32,23 @@ impl<V: View> View for &V {
         (*self).scan(start_exclusive, end_inclusive)
     }
 
-    fn current_seq(&self) -> Seq {
-        (*self).current_seq()
+    fn get_current_seq(&self) -> Seq {
+        (*self).get_current_seq()
     }
 }
 
 pub trait Table: View {
-    fn write<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter);
+    /// Write the given events to the table. Returns the sequence numbers assigned, in order.
+    fn append<Iter: IntoIterator<Item = Self::Event>>(&mut self, events: Iter) -> Vec<Seq>;
+
+    /// Sets the current sequence number of the table unless its sequence number is already greater.
+    fn set_current_seq(&mut self, seq: Seq);
 }
 
 pub trait Index: Sync {
+    /// Incorporates all changes up to and including the given sequence number into the index.
     fn update(&mut self, seq: Seq);
-    fn current_seq(&self) -> Seq;
+
+    /// Returns the sequence number for which all changes up to and including it have been incorporated into the index.
+    fn get_current_seq(&self) -> Seq;
 }

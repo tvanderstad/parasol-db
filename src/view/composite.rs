@@ -28,7 +28,7 @@ where
         CompositeViewIterator::new(self, start, end)
     }
 
-    fn current_seq(&self) -> Seq {
+    fn get_current_seq(&self) -> Seq {
         // current seq for the purposes of reading is the minimum of sequences in the vector clock.
         // the entry for a vector clock is only updated by a transmission from that node, which is a promise not to
         // assign lower sequence numbers to writes, so that the events before the minimum sequence number are immutable
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn scan_none() {
         let composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
-        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite
                 .scan(Seq::MIN, Seq::MAX)
@@ -141,9 +141,9 @@ mod tests {
     fn scan_one() {
         let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
-        composite.views[0].write([12]);
+        composite.views[0].append([12]);
 
-        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite
                 .scan(Seq::MIN, Seq::MAX)
@@ -157,9 +157,9 @@ mod tests {
     fn scan_multiple_one_node() {
         let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
-        composite.views[0].write([12, 34, 56]);
+        composite.views[0].append([12, 34, 56]);
 
-        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite
                 .scan(Seq::MIN, Seq::MAX)
@@ -173,11 +173,11 @@ mod tests {
     fn scan_multiple_multiple_nodes() {
         let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
-        composite.views[0].write([12]);
-        composite.views[1].write([34]);
-        composite.views[2].write([56]);
+        composite.views[0].append([12]);
+        composite.views[1].append([34]);
+        composite.views[2].append([56]);
 
-        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite
                 .scan(Seq::MIN, Seq::MAX)
@@ -191,11 +191,11 @@ mod tests {
     fn scan_multiple_each_multiple_nodes() {
         let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
-        composite.views[0].write([12, 56]);
-        composite.views[1].write([34, 90]);
-        composite.views[2].write([78]);
+        composite.views[0].append([12, 56]);
+        composite.views[1].append([34, 90]);
+        composite.views[2].append([78]);
 
-        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite
                 .scan(Seq::MIN, Seq::MAX)
@@ -209,23 +209,25 @@ mod tests {
     fn scan_multiple_each_multiple_nodes_sparse_seqs() {
         let mut composite = CompositeView::<VecTable<i32>>::new(vec![VecTable::new(); 5]);
 
-        composite.views[0].write([12, 56]);
-        composite.views[1].write([34, 90]);
-        composite.views[2].write([78]);
+        // unrealistic/heavy-handed way to specify all sequence numbers
+        composite.views[0].set_current_seq(0);
+        composite.views[0].append([12]);
+        composite.views[1].set_current_seq(1);
+        composite.views[1].append([34]);
+        composite.views[0].set_current_seq(2);
+        composite.views[0].append([56]);
+        composite.views[2].set_current_seq(3);
+        composite.views[2].append([78]);
+        composite.views[1].set_current_seq(4);
+        composite.views[1].append([90]);
 
-        composite.views[0].seqs[0] = 1; // 12
-        composite.views[1].seqs[0] = 2; // 34
-        composite.views[0].seqs[1] = 3; // 56
-        composite.views[2].seqs[0] = 4; // 78
-        composite.views[1].seqs[1] = 5; // 90
-
-        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(composite.get_current_seq(), 0);
         assert_eq!(
             composite
                 .scan(Seq::MIN, Seq::MAX)
                 .map(|(_, event)| event)
                 .collect::<Vec<&i32>>(),
-            vec![&12, &34, &56, &78, &90] // ordered by (seq, node) pair
+            vec![&12, &34, &56, &78, &90] // nodes don't matter in this case because seqs are unique
         );
     }
 }

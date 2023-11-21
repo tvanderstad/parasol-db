@@ -53,7 +53,7 @@ where
         self.current_seq = seq;
     }
 
-    fn current_seq(&self) -> Seq {
+    fn get_current_seq(&self) -> Seq {
         self.current_seq
     }
 }
@@ -293,20 +293,20 @@ mod tests {
         let mut table = VecTable::<(&str, &str)>::new();
 
         let current_seq = {
-            table.write([
+            table.append([
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
                 ("key4", "value4"),
             ]);
-            table.current_seq()
+            table.get_current_seq()
         };
 
         let mut hash_map_index = HashMapIndex::new(&table, tuple_to_insert);
         hash_map_index.update(current_seq);
 
         assert_eq!(current_seq, 4);
-        assert_eq!(hash_map_index.current_seq(), 4);
+        assert_eq!(hash_map_index.get_current_seq(), 4);
 
         assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
@@ -342,20 +342,20 @@ mod tests {
         let mut table = VecTable::<(&str, &str)>::new();
 
         let current_seq = {
-            table.write([
+            table.append([
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
                 ("key2", "VALUE2"),
             ]);
-            table.current_seq()
+            table.get_current_seq()
         };
 
         let mut hash_map_index = HashMapIndex::new(&table, tuple_to_insert);
         hash_map_index.update(current_seq);
 
         assert_eq!(current_seq, 4);
-        assert_eq!(hash_map_index.current_seq(), 4);
+        assert_eq!(hash_map_index.get_current_seq(), 4);
 
         assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
@@ -385,20 +385,20 @@ mod tests {
         let mut table = VecTable::<HashMapUpdate<&str, &str>>::new();
 
         let current_seq = {
-            table.write([
+            table.append([
                 HashMapUpdate::Insert { key: "key1", value: "value1" },
                 HashMapUpdate::Insert { key: "key2", value: "value2" },
                 HashMapUpdate::Clear,
                 HashMapUpdate::Insert { key: "key3", value: "value3" },
             ]);
-            table.current_seq()
+            table.get_current_seq()
         };
 
         let mut hash_map_index = HashMapIndex::new(&table, |assignment| vec![assignment.clone()]);
         hash_map_index.update(current_seq);
 
         assert_eq!(current_seq, 4);
-        assert_eq!(hash_map_index.current_seq(), 4);
+        assert_eq!(hash_map_index.get_current_seq(), 4);
 
         assert_eq!(hash_map_index.get_all(0), HashMap::from_iter(vec![].into_iter()));
         assert_eq!(
