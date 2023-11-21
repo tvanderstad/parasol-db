@@ -45,9 +45,11 @@ pub trait Table: View {
     fn set_current_seq(&mut self, seq: Seq);
 }
 
-pub trait Index: Sync {
+pub trait Index {
+    type Source: View;
+
     /// Incorporates all changes up to and including the given sequence number into the index.
-    fn update(&mut self, seq: Seq);
+    fn update(&mut self, source: &Self::Source, seq: Seq);
 
     /// Returns the sequence number for which all changes up to and including it have been incorporated into the index.
     fn get_current_seq(&self) -> Seq;
