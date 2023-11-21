@@ -117,10 +117,10 @@ where
 mod tests {
     use super::CompositeView;
     use crate::table::vec::VecTable;
-    use crate::{Seq, View};
+    use crate::{Seq, Table, View};
 
     #[test]
-    fn iter_none() {
+    fn scan_none() {
         let composite = CompositeView::<VecTable<i32>>::new(5);
         assert_eq!(composite.current_seq(), 0);
         assert_eq!(
@@ -129,6 +129,98 @@ mod tests {
                 .map(|(_, event)| event)
                 .collect::<Vec<&i32>>(),
             Vec::<&i32>::new()
+        );
+    }
+
+    #[test]
+    fn scan_one() {
+        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+
+        composite.views[0].write([12]);
+
+        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(
+            composite
+                .scan(Seq::MIN, Seq::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&12]
+        );
+    }
+
+    #[test]
+    fn scan_multiple_one_node() {
+        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+
+        composite.views[0].write([12, 34, 56]);
+
+        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(
+            composite
+                .scan(Seq::MIN, Seq::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&12, &34, &56]
+        );
+    }
+
+    #[test]
+    fn scan_multiple_multiple_nodes() {
+        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+
+        composite.views[0].write([12]);
+        composite.views[1].write([34]);
+        composite.views[2].write([56]);
+
+        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(
+            composite
+                .scan(Seq::MIN, Seq::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&12, &34, &56]
+        );
+    }
+
+    #[test]
+    fn scan_multiple_each_multiple_nodes() {
+        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+
+        composite.views[0].write([12, 56]);
+        composite.views[1].write([34, 90]);
+        composite.views[2].write([78]);
+
+        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(
+            composite
+                .scan(Seq::MIN, Seq::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&12, &34, &78, &56, &90] // ordered by (seq, node) pair
+        );
+    }
+
+    #[test]
+    fn scan_multiple_each_multiple_nodes_sparse_seqs() {
+        let mut composite = CompositeView::<VecTable<i32>>::new(5);
+
+        composite.views[0].write([12, 56]);
+        composite.views[1].write([34, 90]);
+        composite.views[2].write([78]);
+
+        composite.views[0].seqs[0] = 1; // 12
+        composite.views[1].seqs[0] = 2; // 34
+        composite.views[0].seqs[1] = 3; // 56
+        composite.views[2].seqs[0] = 4; // 78
+        composite.views[1].seqs[1] = 5; // 90
+
+        assert_eq!(composite.current_seq(), 0);
+        assert_eq!(
+            composite
+                .scan(Seq::MIN, Seq::MAX)
+                .map(|(_, event)| event)
+                .collect::<Vec<&i32>>(),
+            vec![&12, &34, &56, &78, &90] // ordered by (seq, node) pair
         );
     }
 }
