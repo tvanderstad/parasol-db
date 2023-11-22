@@ -1,6 +1,6 @@
 [package]
 name = "parasol-db"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 description = "Another database"
 license = "BSD-3-Clause"

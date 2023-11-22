@@ -25,10 +25,23 @@ impl<Event, L: View<Event = Event>, R: View<Event = Event>> View for Either<L, R
     }
 }
 
-#[derive(Clone)]
 pub enum EitherViewIterator<Event, L: View<Event = Event>, R: View<Event = Event>> {
     Left(L::Iterator),
     Right(R::Iterator),
+}
+
+impl<Event, L: View<Event = Event>, R: View<Event = Event>> Clone
+    for EitherViewIterator<Event, L, R>
+where
+    L::Iterator: Clone,
+    R::Iterator: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Left(l) => Self::Left(l.clone()),
+            Self::Right(r) => Self::Right(r.clone()),
+        }
+    }
 }
 
 impl<Event, L: View<Event = Event>, R: View<Event = Event>> Iterator
