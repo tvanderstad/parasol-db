@@ -15,6 +15,10 @@ impl<V: View> CompositeView<V> {
     pub fn vector_clock_update(&mut self, node_id: usize, seq: Seq) {
         self.vector_clock[node_id] = seq;
     }
+
+    pub fn views_mut(&mut self) -> &mut Vec<V> {
+        &mut self.views
+    }
 }
 
 impl<V: View> View for CompositeView<V>
