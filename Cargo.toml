@@ -1,6 +1,6 @@
 [package]
 name = "parasol-db"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "Another database"
 license = "BSD-3-Clause"
@@ -9,3 +9,4 @@ repository = "https://github.com/tvanderstad/parasol-db/"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+either = "1.9.0"
