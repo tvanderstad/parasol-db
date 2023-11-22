@@ -25,6 +25,7 @@ impl<Event, L: View<Event = Event>, R: View<Event = Event>> View for Either<L, R
     }
 }
 
+#[derive(Clone)]
 pub enum EitherViewIterator<Event, L: View<Event = Event>, R: View<Event = Event>> {
     Left(L::Iterator),
     Right(R::Iterator),
